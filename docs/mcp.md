@@ -20,7 +20,13 @@ Install PublicLocal first so `publiclocal` is on your PATH:
 curl -fsSL https://publiclocal.app/install.sh | sh
 ```
 
-On Windows, download the zip from [Releases](https://github.com/sevenoways/publiclocal/releases/latest) and put `publiclocal.exe` in a folder on your PATH, or use the full path below.
+On Windows, in PowerShell:
+
+```powershell
+irm https://publiclocal.app/install.ps1 | iex
+```
+
+Then reopen your terminal and restart the assistant so it sees the updated PATH.
 
 ### Claude Code
 

@@ -87,8 +87,8 @@ publiclocal tcp --remote-port 15432 5432   # fixed public port
 
 | Platform | Command |
 |---|---|
-| Linux / macOS | `curl -fsSL https://raw.githubusercontent.com/sevenoways/publiclocal/main/install.sh \| sh` |
-| Windows | download the zip from [Releases](https://github.com/sevenoways/publiclocal/releases/latest) |
+| Linux / macOS | `curl -fsSL https://publiclocal.app/install.sh \| sh` |
+| Windows (PowerShell) | `irm https://publiclocal.app/install.ps1 \| iex` |
 | Docker | `docker pull ghcr.io/sevenoways/publiclocal` |
 | Go | `go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest` |
 
