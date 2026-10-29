@@ -1,0 +1,18 @@
+version: 2
+
+builds:
+  - main: ./cmd/rtun
+    binary: rtun
+    env: [CGO_ENABLED=0]
+    goos: [linux, windows, darwin, freebsd]
+    goarch: [amd64, arm64]
+    ldflags: -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
