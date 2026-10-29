@@ -1,4 +1,4 @@
-// Package proto defines the messages exchanged between rtun clients and servers.
+// Package proto defines the messages exchanged between publiclocal clients and servers.
 //
 // A client opens one TCP (optionally TLS) connection to the server and runs a
 // yamux session over it. The first stream the client opens is the control

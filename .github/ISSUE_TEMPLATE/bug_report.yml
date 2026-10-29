@@ -10,8 +10,8 @@ body:
       required: true
   - type: input
     attributes:
-      label: rtun version
-      placeholder: output of `rtun version`
+      label: publiclocal version
+      placeholder: output of `publiclocal version`
     validations:
       required: true
   - type: input

@@ -1,4 +1,4 @@
-module github.com/sevenoways/rtun
+module github.com/sevenoways/publiclocal
 
 go 1.27.0
 

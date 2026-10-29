@@ -1,4 +1,4 @@
-// Package client connects to an rtun server and forwards tunnel traffic to
+// Package client connects to an publiclocal server and forwards tunnel traffic to
 // local services, reconnecting when the connection drops.
 package client
 
@@ -14,8 +14,8 @@ import (
 
 	"github.com/hashicorp/yamux"
 
-	"github.com/sevenoways/rtun/internal/pipe"
-	"github.com/sevenoways/rtun/internal/proto"
+	"github.com/sevenoways/publiclocal/internal/pipe"
+	"github.com/sevenoways/publiclocal/internal/proto"
 )
 
 type Tunnel struct {

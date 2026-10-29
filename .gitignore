@@ -1,4 +1,5 @@
-/rtun
-/rtun.exe
+/publiclocal
+/publiclocal.exe
 /dist/
-rtun-certs/
+publiclocal-certs/
+.claude/

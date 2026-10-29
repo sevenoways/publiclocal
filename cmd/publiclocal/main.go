@@ -1,5 +1,5 @@
-// Command rtun is a self-hosted reverse tunnel: run `rtun server` on a public
-// host, then `rtun http 3000` or `rtun tcp 22` anywhere to expose a local port.
+// Command publiclocal is a self-hosted reverse tunnel: run `publiclocal server` on a public
+// host, then `publiclocal http 3000` or `publiclocal tcp 22` anywhere to expose a local port.
 package main
 
 import (
@@ -14,22 +14,22 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sevenoways/rtun/internal/client"
-	"github.com/sevenoways/rtun/internal/proto"
-	"github.com/sevenoways/rtun/internal/server"
+	"github.com/sevenoways/publiclocal/internal/client"
+	"github.com/sevenoways/publiclocal/internal/proto"
+	"github.com/sevenoways/publiclocal/internal/server"
 )
 
 var version = "dev" // set by the release build
 
-const usage = `rtun - self-hosted reverse tunnel
+const usage = `publiclocal - self-hosted reverse tunnel
 
 Usage:
-  rtun server  --domain tunnel.example.com [flags]   run the public server
-  rtun http    [flags] <port|host:port>              expose a local HTTP service
-  rtun tcp     [flags] <port|host:port>              expose a local TCP service
-  rtun version
+  publiclocal server  --domain tunnel.example.com [flags]   run the public server
+  publiclocal http    [flags] <port|host:port>              expose a local HTTP service
+  publiclocal tcp     [flags] <port|host:port>              expose a local TCP service
+  publiclocal version
 
-Run "rtun <command> -h" for the flags of each command.
+Run "publiclocal <command> -h" for the flags of each command.
 `
 
 func main() {
@@ -47,28 +47,28 @@ func main() {
 	case "http", "tcp":
 		err = runClient(ctx, os.Args[1], os.Args[2:])
 	case "version", "--version", "-v":
-		fmt.Println("rtun", version)
+		fmt.Println("publiclocal", version)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
-		fmt.Fprintf(os.Stderr, "rtun: unknown command %q\n\n%s", os.Args[1], usage)
+		fmt.Fprintf(os.Stderr, "publiclocal: unknown command %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "rtun:", err)
+		fmt.Fprintln(os.Stderr, "publiclocal:", err)
 		os.Exit(1)
 	}
 }
 
 func runServer(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	domain := fs.String("domain", os.Getenv("RTUN_DOMAIN"), "base domain; tunnels are served at <name>.<domain> (env RTUN_DOMAIN)")
+	domain := fs.String("domain", os.Getenv("PUBLICLOCAL_DOMAIN"), "base domain; tunnels are served at <name>.<domain> (env PUBLICLOCAL_DOMAIN)")
 	control := fs.String("control", ":7000", "address for client connections")
 	httpAddr := fs.String("http", ":80", "plain HTTP address (empty to disable)")
 	httpsAddr := fs.String("https", ":443", "HTTPS address using Let's Encrypt (empty to disable)")
-	tokens := fs.String("tokens", os.Getenv("RTUN_TOKENS"), "comma-separated tokens clients must present (env RTUN_TOKENS)")
+	tokens := fs.String("tokens", os.Getenv("PUBLICLOCAL_TOKENS"), "comma-separated tokens clients must present (env PUBLICLOCAL_TOKENS)")
 	ports := fs.String("tcp-ports", "10000-20000", "port range for TCP tunnels")
-	certDir := fs.String("cert-dir", "rtun-certs", "directory to cache TLS certificates")
+	certDir := fs.String("cert-dir", "publiclocal-certs", "directory to cache TLS certificates")
 	email := fs.String("acme-email", "", "contact email for Let's Encrypt")
 	debug := fs.Bool("debug", false, "verbose logging")
 	fs.Parse(args)
@@ -101,15 +101,15 @@ func runServer(ctx context.Context, args []string) error {
 
 func runClient(ctx context.Context, kind string, args []string) error {
 	fs := flag.NewFlagSet(kind, flag.ExitOnError)
-	srv := fs.String("server", os.Getenv("RTUN_SERVER"), "server control address host:port (env RTUN_SERVER)")
-	token := fs.String("token", os.Getenv("RTUN_TOKEN"), "auth token (env RTUN_TOKEN)")
+	srv := fs.String("server", os.Getenv("PUBLICLOCAL_SERVER"), "server control address host:port (env PUBLICLOCAL_SERVER)")
+	token := fs.String("token", os.Getenv("PUBLICLOCAL_TOKEN"), "auth token (env PUBLICLOCAL_TOKEN)")
 	useTLS := fs.Bool("tls", true, "use TLS to the server (turn off only for servers without HTTPS)")
 	insecure := fs.Bool("insecure-skip-verify", false, "do not verify the server certificate")
 	sub := fs.String("subdomain", "", "requested subdomain (http only)")
 	remotePort := fs.Int("remote-port", 0, "requested public port (tcp only)")
 	debug := fs.Bool("debug", false, "verbose logging")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: rtun %s [flags] <port|host:port>\n", kind)
+		fmt.Fprintf(fs.Output(), "Usage: publiclocal %s [flags] <port|host:port>\n", kind)
 		fs.PrintDefaults()
 	}
 	fs.Parse(args)
@@ -119,7 +119,7 @@ func runClient(ctx context.Context, kind string, args []string) error {
 		os.Exit(2)
 	}
 	if *srv == "" {
-		return errors.New("--server is required (or set RTUN_SERVER)")
+		return errors.New("--server is required (or set PUBLICLOCAL_SERVER)")
 	}
 	local := fs.Arg(0)
 	if _, err := strconv.Atoi(local); err == nil {

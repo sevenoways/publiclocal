@@ -1,10 +1,10 @@
 version: 2
 
-project_name: rtun
+project_name: publiclocal
 
 builds:
-  - main: ./cmd/rtun
-    binary: rtun
+  - main: ./cmd/publiclocal
+    binary: publiclocal
     env: [CGO_ENABLED=0]
     goos: [linux, windows, darwin, freebsd]
     goarch: [amd64, arm64]

@@ -1,19 +1,19 @@
-# Contributing to rtun
+# Contributing to PublicLocal
 
 Thanks for helping. Bug reports, docs fixes and features are all welcome.
 
 ## Getting started
 
 ```bash
-git clone https://github.com/sevenoways/rtun
-cd rtun
+git clone https://github.com/sevenoways/publiclocal
+cd publiclocal
 go test ./...
-go build ./cmd/rtun
+go build ./cmd/publiclocal
 ```
 
 The code is small:
 
-- `cmd/rtun` — command-line interface
+- `cmd/publiclocal` — command-line interface
 - `internal/server` — public side: control port, HTTP routing, TCP listeners
 - `internal/client` — local side: connects, reconnects, forwards streams
 - `internal/proto` — wire messages

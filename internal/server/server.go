@@ -1,4 +1,4 @@
-// Package server is the public side of rtun: it accepts client sessions on a
+// Package server is the public side of publiclocal: it accepts client sessions on a
 // control port and forwards public HTTP and TCP traffic down those sessions.
 package server
 
@@ -26,8 +26,8 @@ import (
 	"github.com/hashicorp/yamux"
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/sevenoways/rtun/internal/pipe"
-	"github.com/sevenoways/rtun/internal/proto"
+	"github.com/sevenoways/publiclocal/internal/pipe"
+	"github.com/sevenoways/publiclocal/internal/proto"
 )
 
 type Config struct {
@@ -159,7 +159,7 @@ func (s *Server) hostPolicy(_ context.Context, host string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("rtun: no active tunnel for %q", host)
+	return fmt.Errorf("publiclocal: no active tunnel for %q", host)
 }
 
 func (s *Server) subdomain(host string) (string, bool) {
@@ -177,14 +177,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	sub, ok := s.subdomain(host)
 	if !ok {
-		http.Error(w, "rtun: no tunnel here", http.StatusNotFound)
+		http.Error(w, "publiclocal: no tunnel here", http.StatusNotFound)
 		return
 	}
 	s.mu.RLock()
 	proxy := s.hosts[sub]
 	s.mu.RUnlock()
 	if proxy == nil {
-		http.Error(w, "rtun: tunnel "+sub+" not found", http.StatusBadGateway)
+		http.Error(w, "publiclocal: tunnel "+sub+" not found", http.StatusBadGateway)
 		return
 	}
 	proxy.ServeHTTP(w, r)
@@ -305,7 +305,7 @@ func (sess *session) addHTTP(idx int, sub string) (proto.TunnelInfo, error) {
 	}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(&url.URL{Scheme: "http", Host: "rtun-tunnel"})
+			pr.SetURL(&url.URL{Scheme: "http", Host: "publiclocal-tunnel"})
 			pr.Out.Host = pr.In.Host
 			pr.SetXForwarded()
 		},
@@ -318,7 +318,7 @@ func (sess *session) addHTTP(idx int, sub string) (proto.TunnelInfo, error) {
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			sess.log.Debug("proxy error", "err", err)
-			http.Error(w, "rtun: local service unavailable", http.StatusBadGateway)
+			http.Error(w, "publiclocal: local service unavailable", http.StatusBadGateway)
 		},
 	}
 	s.mu.Lock()

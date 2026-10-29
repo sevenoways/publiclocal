@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an idea for rtun
+description: Suggest an idea for PublicLocal
 labels: [enhancement]
 body:
   - type: textarea
