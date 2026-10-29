@@ -21,13 +21,20 @@ import (
 
 var version = "dev" // set by the release build
 
-const usage = `publiclocal - self-hosted reverse tunnel
+// defaultServer is the free public instance, used when no server is given.
+const defaultServer = "publiclocal.app:7000"
+
+const usage = `publiclocal - make localhost public
 
 Usage:
-  publiclocal server  --domain tunnel.example.com [flags]   run the public server
   publiclocal http    [flags] <port|host:port>              expose a local HTTP service
-  publiclocal tcp     [flags] <port|host:port>              expose a local TCP service
+  publiclocal tcp     [flags] <port|host:port>              expose a local TCP service (own server only)
+  publiclocal server  --domain tunnel.example.com [flags]   run your own server
+  publiclocal admin   list | kill <sub|ip> | ban <ip> | unban <ip> | bans
   publiclocal version
+
+Without --server (or PUBLICLOCAL_SERVER) clients use the free public server
+at publiclocal.app, where links are temporary.
 
 Run "publiclocal <command> -h" for the flags of each command.
 `
@@ -46,6 +53,8 @@ func main() {
 		err = runServer(ctx, os.Args[2:])
 	case "http", "tcp":
 		err = runClient(ctx, os.Args[1], os.Args[2:])
+	case "admin":
+		err = runAdmin(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("publiclocal", version)
 	case "help", "-h", "--help":
@@ -70,6 +79,16 @@ func runServer(ctx context.Context, args []string) error {
 	ports := fs.String("tcp-ports", "10000-20000", "port range for TCP tunnels")
 	certDir := fs.String("cert-dir", "publiclocal-certs", "directory to cache TLS certificates")
 	email := fs.String("acme-email", "", "contact email for Let's Encrypt")
+	cfToken := fs.String("cloudflare-token", os.Getenv("CLOUDFLARE_DNS_API_TOKEN"), "Cloudflare API token (DNS edit) for one wildcard certificate (env CLOUDFLARE_DNS_API_TOKEN)")
+	admin := fs.String("admin", "127.0.0.1:7001", "admin API address, keep it on localhost (empty to disable)")
+	public := fs.Bool("public", false, "run as an open public instance: random subdomains only, no TCP, warning page, limits")
+	warning := fs.Bool("warning", false, "show the browser warning page (always on with --public)")
+	abuse := fs.String("abuse-contact", "", "mailto: or https: link for abuse reports, shown on the warning page")
+	maxAge := fs.Duration("max-tunnel-age", 0, "close sessions after this long, e.g. 2h (public default 2h)")
+	perIP := fs.Int("max-per-ip", 0, "max simultaneous sessions per client IP (public default 3)")
+	rpm := fs.Int("rate", 0, "max requests per minute per HTTP tunnel (public default 600)")
+	maxMB := fs.Int64("max-transfer-mb", 0, "max traffic per session in MB (public default 2048)")
+	banFile := fs.String("ban-file", "", "file of banned client IPs, one per line")
 	debug := fs.Bool("debug", false, "verbose logging")
 	fs.Parse(args)
 
@@ -81,15 +100,28 @@ func runServer(ctx context.Context, args []string) error {
 		return err
 	}
 	cfg := server.Config{
-		Domain:      *domain,
-		ControlAddr: *control,
-		HTTPAddr:    *httpAddr,
-		HTTPSAddr:   *httpsAddr,
-		TCPPortMin:  lo,
-		TCPPortMax:  hi,
-		CertDir:     *certDir,
-		ACMEEmail:   *email,
-		Logger:      newLogger(*debug),
+		Domain:             *domain,
+		ControlAddr:        *control,
+		HTTPAddr:           *httpAddr,
+		HTTPSAddr:          *httpsAddr,
+		TCPPortMin:         lo,
+		TCPPortMax:         hi,
+		CertDir:            *certDir,
+		ACMEEmail:          *email,
+		CloudflareToken:    *cfToken,
+		AdminAddr:          *admin,
+		Public:             *public,
+		Warning:            *warning,
+		AbuseContact:       *abuse,
+		MaxTunnelAge:       *maxAge,
+		MaxSessionsPerIP:   *perIP,
+		RequestsPerMinute:  *rpm,
+		MaxBytesPerSession: *maxMB << 20,
+		BanFile:            *banFile,
+		Logger:             newLogger(*debug),
+	}
+	if *public && *abuse == "" {
+		return errors.New("--public needs --abuse-contact so visitors can report misuse")
 	}
 	for t := range strings.SplitSeq(*tokens, ",") {
 		if t = strings.TrimSpace(t); t != "" {
@@ -119,7 +151,7 @@ func runClient(ctx context.Context, kind string, args []string) error {
 		os.Exit(2)
 	}
 	if *srv == "" {
-		return errors.New("--server is required (or set PUBLICLOCAL_SERVER)")
+		*srv = defaultServer
 	}
 	local := fs.Arg(0)
 	if _, err := strconv.Atoi(local); err == nil {

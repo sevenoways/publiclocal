@@ -29,11 +29,24 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **Token authentication** and an encrypted (TLS) control channel
 - **Auto-reconnect** with backoff when the network drops
 - **Single static binary** for Linux, macOS, Windows and FreeBSD (amd64/arm64), plus a Docker image
-- **MIT licensed**, about 800 lines of readable Go
+- **Public mode** for running an open instance safely: browser warning page, random names, expiring links, rate and traffic limits, ban tools
+- **Wildcard certificates** through Cloudflare DNS, so a busy server never hits Let's Encrypt limits
+- **MIT licensed**, small and readable Go
 
-## Quick start
+## Try it on the free public server
 
-You need a server with a public IP (any $5 VPS) and a domain you control. A subdomain of a domain you already own is fine.
+> **Coming soon:** the free server at `publiclocal.app` is being set up.
+
+```bash
+publiclocal http 3000
+# Forwarding https://3f9a1c2b7e.publiclocal.app -> 127.0.0.1:3000
+```
+
+With no `--server` set, the client uses `publiclocal.app`. Links there are **temporary** and meant for testing and demos: random names only, HTTP only, links expire after 2 hours, and browsers see a short warning page before your app. Webhooks, APIs and `curl` skip it. For anything permanent, run your own server (below); it takes two commands.
+
+## Run your own server
+
+You need a server with a public IP (any $5 VPS) and a domain you control. A subdomain of a domain you already own is fine. To run an open instance for others, see [docs/public-instance.md](docs/public-instance.md).
 
 **1. DNS.** Point a name and its wildcard at the server:
 
@@ -111,6 +124,13 @@ The client dials the server once and multiplexes that connection with [yamux](ht
 | `--tcp-ports` | `10000-20000` | range for TCP tunnels |
 | `--cert-dir` | `publiclocal-certs` | certificate cache |
 | `--acme-email` | | Let's Encrypt contact |
+| `--cloudflare-token` | `$CLOUDFLARE_DNS_API_TOKEN` | use one wildcard certificate via Cloudflare DNS |
+| `--public` | off | open-instance safeguards; see [docs/public-instance.md](docs/public-instance.md) |
+| `--warning` | off | browser warning page (always on with `--public`) |
+| `--abuse-contact` | | `mailto:` or `https:` link on the warning page (required with `--public`) |
+| `--max-tunnel-age`, `--max-per-ip`, `--rate`, `--max-transfer-mb` | public: 2h, 3, 600/min, 2048 | limits |
+| `--admin` | `127.0.0.1:7001` | admin API for `publiclocal admin list/kill/ban` |
+| `--ban-file` | | persist banned IPs |
 
 If the server runs with `--https ""`, start clients with `--tls=false`.
 
