@@ -27,6 +27,7 @@
     </a>
     <nav>
       <a href="#install">Install</a>
+      <a class="hide-sm" href="#ai">AI / MCP</a>
       <a class="hide-sm" href="#self-host">Self-host</a>
       <a class="hide-sm" href="/terms">Fair use</a>
       <a href="https://github.com/sevenoways/publiclocal">GitHub</a>
@@ -71,6 +72,18 @@ Forwarding <span class="url">https://3f9a1c2b7e.publiclocal.app</span> -&gt; 127
         <div class="card"><h3>Demos</h3><p>Send a client or teammate a link to the work in progress, without deploying anything.</p></div>
         <div class="card"><h3>Mobile testing</h3><p>Open your local site on a real phone over HTTPS, cameras and service workers included.</p></div>
         <div class="card"><h3>OAuth callbacks</h3><p>Use a real HTTPS redirect URL while developing sign-in with Google, GitHub or Auth0.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ai">
+    <div class="wrap">
+      <h2>Works with your AI assistant</h2>
+      <p class="sub">PublicLocal includes an MCP server. Ask <em>"share my dev server on port 3000"</em> and your assistant opens the tunnel and hands you the link.</p>
+      <div class="install">
+        <div class="row"><b>Claude Code</b><code id="m1">claude mcp add publiclocal -- publiclocal mcp</code><button class="copy" data-copy="m1">Copy</button></div>
+        <div class="row"><b>Codex CLI</b><code id="m2">codex mcp add publiclocal -- publiclocal mcp</code><button class="copy" data-copy="m2">Copy</button></div>
+        <div class="row"><b>Claude Desktop, Cursor, VS Code, Gemini</b><code>{"command": "publiclocal", "args": ["mcp"]}</code><a class="copy" href="https://github.com/sevenoways/publiclocal/blob/main/docs/mcp.md">Setup</a></div>
       </div>
     </div>
   </section>

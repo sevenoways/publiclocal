@@ -30,6 +30,7 @@ Usage:
   publiclocal http    [flags] <port|host:port>              expose a local HTTP service
   publiclocal tcp     [flags] <port|host:port>              expose a local TCP service (own server only)
   publiclocal server  --domain tunnel.example.com [flags]   run your own server
+  publiclocal mcp     [flags]                               MCP server for AI assistants (Claude, ChatGPT, Cursor...)
   publiclocal admin   list | kill <sub|ip> | ban <ip> | unban <ip> | bans
   publiclocal version
 
@@ -55,6 +56,8 @@ func main() {
 		err = runClient(ctx, os.Args[1], os.Args[2:])
 	case "admin":
 		err = runAdmin(os.Args[2:])
+	case "mcp":
+		err = runMCP(ctx, os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("publiclocal", version)
 	case "help", "-h", "--help":

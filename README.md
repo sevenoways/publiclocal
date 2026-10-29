@@ -29,6 +29,7 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **Token authentication** and an encrypted (TLS) control channel
 - **Auto-reconnect** with backoff when the network drops
 - **Single static binary** for Linux, macOS, Windows and FreeBSD (amd64/arm64), plus a Docker image
+- **Works with AI assistants** over MCP: Claude, Cursor, VS Code Copilot, Codex, Gemini CLI. Say "share my dev server" and get a link
 - **Public mode** for running an open instance safely: browser warning page, random names, expiring links, rate and traffic limits, ban tools
 - **Wildcard certificates** through Cloudflare DNS, so a busy server never hits Let's Encrypt limits
 - **MIT licensed**, small and readable Go
@@ -90,6 +91,17 @@ publiclocal tcp --remote-port 15432 5432   # fixed public port
 | Windows | download the zip from [Releases](https://github.com/sevenoways/publiclocal/releases/latest) |
 | Docker | `docker pull ghcr.io/sevenoways/publiclocal` |
 | Go | `go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest` |
+
+## Use it from AI assistants (MCP)
+
+Ask your assistant to *"share my app on port 3000"* and it opens the tunnel for you:
+
+```bash
+claude mcp add publiclocal -- publiclocal mcp       # Claude Code
+codex mcp add publiclocal -- publiclocal mcp        # OpenAI Codex CLI
+```
+
+Setup for Claude Desktop, Cursor, VS Code, Gemini CLI and more, plus safety options like `--allow-ports`: [docs/mcp.md](docs/mcp.md).
 
 ## How it compares
 
