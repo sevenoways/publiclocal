@@ -14,8 +14,8 @@ import (
 
 	"github.com/hashicorp/yamux"
 
-	"github.com/sevenoways/reverse-tunnel/internal/pipe"
-	"github.com/sevenoways/reverse-tunnel/internal/proto"
+	"github.com/sevenoways/rtun/internal/pipe"
+	"github.com/sevenoways/rtun/internal/proto"
 )
 
 type Tunnel struct {

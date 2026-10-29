@@ -1,5 +1,7 @@
 version: 2
 
+project_name: rtun
+
 builds:
   - main: ./cmd/rtun
     binary: rtun

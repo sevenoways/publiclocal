@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sevenoways/reverse-tunnel/internal/client"
-	"github.com/sevenoways/reverse-tunnel/internal/proto"
-	"github.com/sevenoways/reverse-tunnel/internal/server"
+	"github.com/sevenoways/rtun/internal/client"
+	"github.com/sevenoways/rtun/internal/proto"
+	"github.com/sevenoways/rtun/internal/server"
 )
 
 const domain = "tunnel.test"

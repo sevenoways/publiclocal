@@ -1,4 +1,4 @@
-module github.com/sevenoways/reverse-tunnel
+module github.com/sevenoways/rtun
 
 go 1.27.0
 

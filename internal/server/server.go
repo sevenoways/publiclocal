@@ -26,8 +26,8 @@ import (
 	"github.com/hashicorp/yamux"
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/sevenoways/reverse-tunnel/internal/pipe"
-	"github.com/sevenoways/reverse-tunnel/internal/proto"
+	"github.com/sevenoways/rtun/internal/pipe"
+	"github.com/sevenoways/rtun/internal/proto"
 )
 
 type Config struct {
