@@ -34,7 +34,7 @@ API clients, webhooks and `curl` never see the warning page: it is shown only to
 Any small VPS works (2 vCPU, 2–4 GB RAM). Bandwidth is what matters. On Ubuntu or Debian:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sevenoways/publiclocal/main/install.sh | sh
+curl -fsSL https://publiclocal.app/install.sh | sh
 sudo useradd --system --home /var/lib/publiclocal --create-home publiclocal
 sudo ufw allow 22,80,443,7000/tcp && sudo ufw enable
 ```

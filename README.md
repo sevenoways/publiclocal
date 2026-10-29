@@ -58,7 +58,7 @@ tunnel.example.com.    A  203.0.113.10
 **2. Server.** Open ports 80, 443, 7000 and 10000–20000, then:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sevenoways/publiclocal/main/install.sh | sh
+curl -fsSL https://publiclocal.app/install.sh | sh
 publiclocal server --domain tunnel.example.com --tokens "$(openssl rand -hex 24)" --acme-email you@example.com
 ```
 

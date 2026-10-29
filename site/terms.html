@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fair use and acceptable use · PublicLocal</title>
+<meta name="description" content="Rules for the free PublicLocal tunnel server at publiclocal.app, and how to report abuse.">
+<link rel="canonical" href="https://publiclocal.app/terms">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232557e8'/%3E%3Cpath d='M9 20a7 7 0 0 1 14 0' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='20' r='2.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2557e8"/><path d="M9 20a7 7 0 0 1 14 0" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="16" cy="20" r="2.5" fill="#fff"/></svg>
+      PublicLocal
+    </a>
+    <nav><a href="/">Home</a><a href="https://github.com/sevenoways/publiclocal">GitHub</a></nav>
+  </div>
+</header>
+
+<main class="wrap prose">
+  <h1>Fair use</h1>
+  <p>The server at <code>publiclocal.app</code> is a free service for developers to share work in progress <strong>temporarily</strong>: testing, demos and webhooks. It is provided as is, without any guarantee of uptime, and may change or stop at any time.</p>
+
+  <h2>You may not use it to</h2>
+  <ul>
+    <li>impersonate any company, brand or person, or collect passwords, payment or personal details (phishing);</li>
+    <li>distribute malware, run command-and-control servers, or attack other systems;</li>
+    <li>host illegal content, or content that infringes copyright;</li>
+    <li>send spam, or proxy other people's traffic (VPNs, open proxies, scraping farms);</li>
+    <li>run a permanent production website or service. <a href="https://github.com/sevenoways/publiclocal#run-your-own-server">Self-host</a> for that.</li>
+  </ul>
+
+  <h2>Limits</h2>
+  <ul>
+    <li>Random addresses only; links expire after 2 hours.</li>
+    <li>HTTP and HTTPS only. No raw TCP.</li>
+    <li>Up to 3 tunnels at a time per IP address, 600 requests per minute per tunnel, 2 GB of traffic per session and 10 MB per request.</li>
+    <li>Browser visitors see a notice explaining that the link is a temporary tunnel.</li>
+  </ul>
+
+  <h2>Enforcement and privacy</h2>
+  <p>To handle abuse, the server logs which IP address opened which tunnel address and when. It does not record the content of your traffic. Tunnels that break these rules are closed and the IP address may be banned without notice. Logs may be shared with hosting providers or authorities when required.</p>
+
+  <h2>Report abuse</h2>
+  <p>Email <a href="mailto:abuse@publiclocal.app">abuse@publiclocal.app</a> with the full tunnel address (for example <code>https://3f9a1c2b7e.publiclocal.app</code>) and what you saw. We act on reports as quickly as we can.</p>
+  <p style="margin-bottom:64px">Found a security problem in PublicLocal itself? Please <a href="https://github.com/sevenoways/publiclocal/security/advisories/new">report it privately on GitHub</a>.</p>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>PublicLocal is free and open source (MIT).</span>
+    <span><a href="/">Home</a> · <a href="mailto:abuse@publiclocal.app">Report abuse</a> · <a href="https://github.com/sevenoways/publiclocal">GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

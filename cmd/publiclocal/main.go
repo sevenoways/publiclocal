@@ -89,6 +89,7 @@ func runServer(ctx context.Context, args []string) error {
 	rpm := fs.Int("rate", 0, "max requests per minute per HTTP tunnel (public default 600)")
 	maxMB := fs.Int64("max-transfer-mb", 0, "max traffic per session in MB (public default 2048)")
 	banFile := fs.String("ban-file", "", "file of banned client IPs, one per line")
+	siteDir := fs.String("site-dir", "", "static files to serve as the homepage on the bare domain")
 	debug := fs.Bool("debug", false, "verbose logging")
 	fs.Parse(args)
 
@@ -118,6 +119,7 @@ func runServer(ctx context.Context, args []string) error {
 		RequestsPerMinute:  *rpm,
 		MaxBytesPerSession: *maxMB << 20,
 		BanFile:            *banFile,
+		SiteDir:            *siteDir,
 		Logger:             newLogger(*debug),
 	}
 	if *public && *abuse == "" {

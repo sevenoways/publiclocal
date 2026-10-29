@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the latest publiclocal release: curl -fsSL https://raw.githubusercontent.com/sevenoways/publiclocal/main/install.sh | sh
+# Installs the latest publiclocal release: curl -fsSL https://publiclocal.app/install.sh | sh
 # Set PUBLICLOCAL_VERSION=v0.2.0 to pin a version, BIN_DIR to choose where it goes.
 set -eu
 

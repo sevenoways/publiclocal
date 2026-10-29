@@ -70,6 +70,10 @@ type Config struct {
 
 	BanFile string // banned client IPs, one per line; empty keeps bans in memory only
 
+	// SiteDir holds static files served on the bare domain (the homepage).
+	// www.<Domain> redirects there. Empty serves nothing on the bare domain.
+	SiteDir string
+
 	Logger *slog.Logger
 }
 
@@ -257,6 +261,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
+	if s.cfg.SiteDir != "" {
+		switch host {
+		case s.cfg.Domain:
+			s.serveSite(w, r)
+			return
+		case "www." + s.cfg.Domain:
+			http.Redirect(w, r, s.scheme+"://"+s.cfg.Domain+r.URL.RequestURI(), http.StatusMovedPermanently)
+			return
+		}
+	}
 	sub, ok := s.subdomain(host)
 	if !ok {
 		http.Error(w, "publiclocal: no tunnel here", http.StatusNotFound)
@@ -443,6 +457,8 @@ func (sess *session) addHTTP(idx int, sub string) (proto.TunnelInfo, error) {
 	switch {
 	case sub == "":
 		sub = randomName()
+	case reserved[sub]:
+		return proto.TunnelInfo{}, fmt.Errorf("subdomain %q is reserved", sub)
 	case s.cfg.Public:
 		return proto.TunnelInfo{}, errors.New("custom subdomains are not available on this public server; omit --subdomain to get a random one")
 	case !subdomainRE.MatchString(sub):
