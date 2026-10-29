@@ -35,7 +35,7 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 
 ## Try it on the free public server
 
-> **Coming soon:** the free server at `publiclocal.app` is being set up.
+No account, no sign-up. Install, then:
 
 ```bash
 publiclocal http 3000
