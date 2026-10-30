@@ -104,7 +104,7 @@ func TestHTTPAndTCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusBadGateway {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown subdomain: status %d", resp.StatusCode)
 	}
 

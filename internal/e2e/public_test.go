@@ -153,7 +153,7 @@ func TestPublicRateLimitAndExpiry(t *testing.T) {
 		t.Fatalf("rate limit: got %d %d %d", a, b, c)
 	}
 	time.Sleep(time.Second)
-	if s := status(); s != http.StatusBadGateway {
+	if s := status(); s != http.StatusNotFound {
 		t.Fatalf("expired tunnel should be gone, got %d", s)
 	}
 }

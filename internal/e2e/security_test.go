@@ -90,7 +90,7 @@ func TestWarningCannotBeBypassed(t *testing.T) {
 		t.Fatal("forged cookie skipped the warning")
 	}
 	other := tunnelReq{t, httpURL, "zzzzzz." + domain}
-	if resp, _ := other.do("GET", "/", with(browserHdr, "Cookie", good.Name+"="+good.Value), ""); resp.StatusCode != http.StatusBadGateway {
+	if resp, _ := other.do("GET", "/", with(browserHdr, "Cookie", good.Name+"="+good.Value), ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unexpected status for other host: %d", resp.StatusCode)
 	}
 	if _, body := q.do("GET", "/", with(browserHdr, "Cookie", good.Name+"="+good.Value), ""); body != "PHISH" {
@@ -260,7 +260,7 @@ func TestSuspendTakesAllLinksOfTheAccount(t *testing.T) {
 		t.Fatalf("%d sessions still open after suspend", n)
 	}
 	q := tunnelReq{t, httpURL, strings.TrimPrefix(b.URL, "http://")}
-	if resp, _ := q.do("GET", "/", nil, ""); resp.StatusCode != http.StatusBadGateway {
+	if resp, _ := q.do("GET", "/", nil, ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("the account's other link still served: %d", resp.StatusCode)
 	}
 	if code, _ := api(t, httpURL, "GET", "/api/me", token, nil); code != 401 {

@@ -89,10 +89,10 @@ func TestMCP(t *testing.T) {
 		t.Fatalf("stop: %v", out)
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for fetch() != http.StatusBadGateway && time.Now().Before(deadline) {
+	for fetch() != http.StatusServiceUnavailable && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
-	if code := fetch(); code != http.StatusBadGateway {
+	if code := fetch(); code != http.StatusServiceUnavailable {
 		t.Fatalf("stopped tunnel still answers: %d", code)
 	}
 }

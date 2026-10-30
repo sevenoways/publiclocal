@@ -370,9 +370,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.RLock()
 	rt := s.hosts[sub]
+	res := s.reservations[sub]
 	s.mu.RUnlock()
 	if rt == nil {
-		http.Error(w, "publiclocal: tunnel "+sub+" not found or expired", http.StatusBadGateway)
+		if res != nil && !res.expired(time.Now()) {
+			s.linkOffline(w, r, host)
+		} else {
+			s.linkGone(w, r, host)
+		}
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/.well-known/acme-challenge/") {
@@ -580,7 +585,7 @@ func (sess *session) addHTTP(idx int, sub, claim string) (proto.TunnelInfo, erro
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			sess.log.Debug("proxy error", "err", err)
-			http.Error(w, "publiclocal: local service unavailable", http.StatusBadGateway)
+			s.appDown(w, r, hostOnly(r.Host))
 		},
 	}
 	s.mu.Lock()
