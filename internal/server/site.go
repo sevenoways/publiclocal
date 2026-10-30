@@ -23,7 +23,10 @@ func (s *Server) serveSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h := w.Header()
-	h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
+	// Google Analytics (consent-gated, see site/analytics.js) is the only third party allowed.
+	h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; "+
+		"connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; "+
+		"img-src 'self' data: https://*.google-analytics.com https://*.googletagmanager.com; frame-ancestors 'none'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	if s.scheme == "https" {
