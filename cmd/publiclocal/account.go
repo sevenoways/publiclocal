@@ -255,13 +255,16 @@ func expiryText(t time.Time) string {
 		return "does not expire"
 	}
 	d := time.Until(t).Round(time.Minute)
+	when := t.Local().Format("Mon 2 Jan 15:04")
 	switch {
 	case d <= 0:
 		return "has expired"
 	case d >= 48*time.Hour:
-		return fmt.Sprintf("expires in %d days (%s)", int(d.Hours()/24), t.Local().Format("Mon 2 Jan 15:04"))
+		return fmt.Sprintf("expires in %d days (%s)", int((d + 12*time.Hour).Hours()/24), when)
+	case d >= 2*time.Hour:
+		return fmt.Sprintf("expires in %d hours (%s)", int((d + 30*time.Minute).Hours()), when)
 	default:
-		return fmt.Sprintf("expires in %s (%s)", strings.TrimSuffix(d.String(), "0s"), t.Local().Format("Mon 2 Jan 15:04"))
+		return fmt.Sprintf("expires in %d minutes (%s)", int(d.Minutes()), when)
 	}
 }
 
