@@ -554,6 +554,11 @@ func (s *Server) handleSession(conn net.Conn) {
 		log.Debug("bad hello", "err", err)
 		return
 	}
+	if hello.Events {
+		// Set before any tunnel is registered, so request handlers never
+		// observe it changing.
+		sess.events = make(chan proto.Event, 256)
+	}
 	infos, err := sess.setup(hello)
 	if err != nil {
 		log.Info("session rejected", "err", err)
@@ -572,8 +577,7 @@ func (s *Server) handleSession(conn net.Conn) {
 		log.Info("tunnel open", "url", t.URL, "account", sess.account, "expires", t.Expires)
 	}
 
-	if hello.Events {
-		sess.events = make(chan proto.Event, 256)
+	if sess.events != nil {
 		go sess.pumpEvents(ctrl)
 	}
 	go func() {
