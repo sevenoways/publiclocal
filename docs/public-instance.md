@@ -113,6 +113,8 @@ publiclocal admin kill k7xq2m      # close the session behind a subdomain
 publiclocal admin ban 203.0.113.45     # ban an IP and close its sessions (saved to the ban file)
 publiclocal admin unban 203.0.113.45
 publiclocal admin bans
+publiclocal admin links                # every live link, online or offline, with owner, traffic and expiry
+publiclocal admin forget k7xq2m        # remove a link and close its tunnel, without banning
 publiclocal admin flags                # links the misuse checker flagged
 publiclocal admin scan                 # check a random sample of live links now
 publiclocal admin suspend k7xq2m       # remove a link and ban its IP and GitHub account

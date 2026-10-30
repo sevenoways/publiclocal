@@ -34,7 +34,7 @@ Usage:
   publiclocal logout
   publiclocal mcp     [flags]                               MCP server for AI assistants (Claude, Cursor, Codex...)
   publiclocal server  --domain tunnel.example.com [flags]   run your own server
-  publiclocal admin   list | flags | scan | suspend <sub> | kill <sub|ip> | ban <ip> | unban <ip> | bans
+  publiclocal admin   list | links | forget <sub> | suspend <sub> | kill <sub|ip> | ban <ip> | flags | scan
   publiclocal version
 
 Without --server (or PUBLICLOCAL_SERVER) clients use the free public server

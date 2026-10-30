@@ -32,6 +32,8 @@ type TunnelStatus struct {
 //	POST /ban?ip=ADDR      ban an IP and close its sessions
 //	POST /unban?ip=ADDR    lift a ban
 //	GET  /bans             list banned IPs
+//	GET  /links            every live link, online or not
+//	POST /forget?sub=NAME  remove a link without banning anyone
 //	GET  /flags            links the misuse checker flagged
 //	POST /scan             run the misuse checker now
 //	POST /suspend?sub=NAME remove a link and ban its IP and account
@@ -70,6 +72,16 @@ func (s *Server) AdminHandler() http.Handler {
 			return
 		}
 		writeJSON(w, map[string]int{"closed": s.Kill("", ip)})
+	})
+	mux.HandleFunc("GET /links", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, s.Links())
+	})
+	mux.HandleFunc("POST /forget", func(w http.ResponseWriter, r *http.Request) {
+		if !s.Forget(r.URL.Query().Get("sub")) {
+			http.Error(w, "no such link", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /flags", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.Flags())
@@ -132,6 +144,64 @@ func writeJSON(w http.ResponseWriter, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.Encode(v)
+}
+
+// LinkStatus describes one reserved link, online or not, for the admin API.
+type LinkStatus struct {
+	Name     string    `json:"name"`
+	URL      string    `json:"url"`
+	Online   bool      `json:"online"`
+	Account  string    `json:"account,omitempty"`
+	IP       string    `json:"ip"`
+	Created  time.Time `json:"created"`
+	Expires  time.Time `json:"expires,omitzero"`
+	Requests int64     `json:"requests"`
+	Visitors int       `json:"visitors"`
+	Bytes    int64     `json:"bytes"`
+}
+
+// Links lists every live link, oldest first.
+func (s *Server) Links() []LinkStatus {
+	s.mu.RLock()
+	now := time.Now()
+	out := make([]LinkStatus, 0, len(s.reservations))
+	for sub, res := range s.reservations {
+		if res.expired(now) {
+			continue
+		}
+		rt := s.hosts[sub]
+		req, bytes, vis := res.live(rt)
+		out = append(out, LinkStatus{Name: sub, URL: s.httpURL(sub), Online: rt != nil, Account: res.Account, IP: res.IP, Created: res.Created, Expires: res.Expires, Requests: req, Visitors: vis, Bytes: bytes})
+	}
+	s.mu.RUnlock()
+	slices.SortFunc(out, func(a, b LinkStatus) int { return a.Created.Compare(b.Created) })
+	return out
+}
+
+// Forget removes a link and closes its session, without banning anyone.
+func (s *Server) Forget(sub string) bool {
+	sub = strings.ToLower(sub)
+	s.mu.Lock()
+	res, rt := s.reservations[sub], s.hosts[sub]
+	if res == nil && rt == nil {
+		s.mu.Unlock()
+		return false
+	}
+	if res != nil {
+		if res.timer != nil {
+			res.timer.Stop()
+		}
+		delete(s.reservations, sub)
+	}
+	delete(s.hosts, sub)
+	delete(s.flags, sub)
+	s.saveLocked()
+	s.mu.Unlock()
+	if rt != nil {
+		rt.sess.log.Info("link removed by admin", "sub", sub)
+		rt.sess.ys.Close()
+	}
+	return true
 }
 
 // Tunnels lists connected clients, oldest first.

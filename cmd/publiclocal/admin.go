@@ -21,6 +21,8 @@ func runAdmin(args []string) error {
 		fmt.Fprint(fs.Output(), `Usage: publiclocal admin [--addr host:port] <command>
 
   list              connected clients and their tunnels
+  links             every live link, online or offline, with owner, traffic and expiry
+  forget <link>     remove a link (and close its tunnel) without banning anyone
   kill <sub|ip>     close the session holding a subdomain, or all sessions from an IP
   ban <ip>          ban an IP and close its sessions
   unban <ip>        lift a ban
@@ -39,6 +41,11 @@ func runAdmin(args []string) error {
 		path = "/tunnels"
 	case cmd == "bans" && fs.NArg() == 1:
 		path = "/bans"
+	case cmd == "links" && fs.NArg() == 1:
+		path = "/links"
+	case cmd == "forget" && fs.NArg() == 2:
+		method, path = http.MethodPost, "/forget"
+		q.Set("sub", linkName(arg))
 	case cmd == "flags" && fs.NArg() == 1:
 		path = "/flags"
 	case cmd == "scan" && fs.NArg() == 1:
