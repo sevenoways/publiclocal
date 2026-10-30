@@ -41,7 +41,7 @@ publiclocal http 3000
 # Forwarding https://k7xq2m.publiclocal.app -> 127.0.0.1:3000
 ```
 
-With no `--server` set, the client uses `publiclocal.app`. Links there are **temporary** and meant for testing and demos: random names, HTTP only, and browsers see a short warning page before your app (webhooks, APIs and `curl` skip it). Links last **24 hours**, and keep the same address if your connection drops. Run `publiclocal login` (GitHub) to get **7-day links** that you can extend with `publiclocal extend`. For anything permanent, run your own server (below); it takes two commands.
+With no `--server` set, the client uses `publiclocal.app`. Links there are **temporary** and meant for testing and demos: random names, HTTP only, and browsers see a short warning page before your app (webhooks, APIs and `curl` skip it). Links last **24 hours**, and `publiclocal http 3000` comes back with the same address after a reconnect or a restart (add `--new` for a fresh one). Run `publiclocal login` (GitHub) to get **7-day links** that you can extend with `publiclocal extend`. For anything permanent, run your own server (below); it takes two commands.
 
 ## Run your own server
 
@@ -141,6 +141,10 @@ The client dials the server once and multiplexes that connection with [yamux](ht
 | `--max-tunnel-age`, `--max-per-ip`, `--rate`, `--max-transfer-mb` | public: 24h, 3, 600/min, 2048 | limits |
 | `--admin` | `127.0.0.1:7001` | admin API for `publiclocal admin list/kill/ban` |
 | `--ban-file` | | persist banned IPs |
+| `--state-file` | | keep links and accounts across restarts |
+| `--github-client-id`, `--github-client-secret` | `$GITHUB_CLIENT_ID`, `$GITHUB_CLIENT_SECRET` | enable `publiclocal login` |
+| `--max-links-per-ip`, `--max-links-per-account`, `--connects-per-minute` | public: 10, 50, 30 | abuse limits |
+| `--admin-token` | `$PUBLICLOCAL_ADMIN_TOKEN` | require a token on the admin API |
 
 If the server runs with `--https ""`, start clients with `--tls=false`.
 

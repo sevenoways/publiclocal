@@ -16,6 +16,7 @@ import (
 func runAdmin(args []string) error {
 	fs := flag.NewFlagSet("admin", flag.ExitOnError)
 	addr := fs.String("addr", "127.0.0.1:7001", "server admin API address")
+	token := fs.String("token", os.Getenv("PUBLICLOCAL_ADMIN_TOKEN"), "admin token, if the server requires one (env PUBLICLOCAL_ADMIN_TOKEN)")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `Usage: publiclocal admin [--addr host:port] <command>
 
@@ -66,6 +67,9 @@ func runAdmin(args []string) error {
 	req, err := http.NewRequest(method, "http://"+*addr+path+"?"+q.Encode(), nil)
 	if err != nil {
 		return err
+	}
+	if *token != "" {
+		req.Header.Set("Authorization", "Bearer "+*token)
 	}
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {

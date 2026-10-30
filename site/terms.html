@@ -37,12 +37,12 @@
   <ul>
     <li>Random addresses only. Links last 24 hours, or 7 days for users signed in with GitHub, who can extend them by another 7 days at a time.</li>
     <li>HTTP and HTTPS only. No raw TCP.</li>
-    <li>Up to 3 tunnels at a time per IP address, 600 requests per minute per tunnel, 2 GB of traffic per session and 10 MB per request.</li>
+    <li>Up to 3 tunnels at a time and 10 active links per IP address (50 per signed-in account), 600 requests per minute per tunnel, 2 GB of traffic per session and 10 MB per request.</li>
     <li>Browser visitors see a notice explaining that the link is a temporary tunnel.</li>
   </ul>
 
   <h2>Enforcement and privacy</h2>
-  <p>To keep the service safe, we automatically check random live links for signs of phishing or fraud, and review what they flag. Our checker visits a link's home page with the user agent <code>PublicLocal-Safety-Check</code>. The server logs which IP address (and, if signed in, which GitHub account) opened which link and when. It does not record the content of your traffic. Links that break these rules are removed, and the IP address and GitHub account behind them are banned, without notice. Logs may be shared with hosting providers or authorities when required.</p>
+  <p>To keep the service safe, we automatically check random live links for signs of phishing or fraud, and review what they flag. Our checker visits a link's home page the way an ordinary browser would.The server logs which IP address (and, if signed in, which GitHub account) opened which link and when. It does not record the content of your traffic. Links that break these rules are removed, and the IP address and GitHub account behind them are banned, without notice. Logs may be shared with hosting providers or authorities when required.</p>
 
   <h2>Report abuse</h2>
   <p>Email <a href="mailto:abuse@publiclocal.app">abuse@publiclocal.app</a> with the full tunnel address (for example <code>https://k7xq2m.publiclocal.app</code>) and what you saw. We act on reports as quickly as we can.</p>

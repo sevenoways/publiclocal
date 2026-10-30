@@ -105,6 +105,10 @@ func runServer(ctx context.Context, args []string) error {
 	ghID := fs.String("github-client-id", os.Getenv("GITHUB_CLIENT_ID"), "GitHub OAuth app client ID; enables `publiclocal login` (env GITHUB_CLIENT_ID)")
 	ghSecret := fs.String("github-client-secret", os.Getenv("GITHUB_CLIENT_SECRET"), "GitHub OAuth app client secret (env GITHUB_CLIENT_SECRET)")
 	scanEvery := fs.Duration("scan-interval", 0, "check random live links for phishing this often (public default 10m)")
+	linksPerIP := fs.Int("max-links-per-ip", 0, "active links per client network, IPv4 address or IPv6 /64 (public default 10)")
+	linksPerAcct := fs.Int("max-links-per-account", 0, "active links per signed-in account (public default 50)")
+	connRate := fs.Int("connects-per-minute", 0, "client connections per network per minute (public default 30)")
+	adminToken := fs.String("admin-token", os.Getenv("PUBLICLOCAL_ADMIN_TOKEN"), "bearer token the admin API requires (env PUBLICLOCAL_ADMIN_TOKEN)")
 	perIP := fs.Int("max-per-ip", 0, "max simultaneous sessions per client IP (public default 3)")
 	rpm := fs.Int("rate", 0, "max requests per minute per HTTP tunnel (public default 600)")
 	maxMB := fs.Int64("max-transfer-mb", 0, "max traffic per session in MB (public default 2048)")
@@ -140,6 +144,10 @@ func runServer(ctx context.Context, args []string) error {
 		GitHubClientID:     *ghID,
 		GitHubClientSecret: *ghSecret,
 		ScanInterval:       *scanEvery,
+		MaxLinksPerIP:      *linksPerIP,
+		MaxLinksPerAccount: *linksPerAcct,
+		ConnectsPerMinute:  *connRate,
+		AdminToken:         *adminToken,
 		MaxSessionsPerIP:   *perIP,
 		RequestsPerMinute:  *rpm,
 		MaxBytesPerSession: *maxMB << 20,
@@ -164,7 +172,9 @@ func runClient(ctx context.Context, kind string, args []string) error {
 	token := fs.String("token", os.Getenv("PUBLICLOCAL_TOKEN"), "auth token (env PUBLICLOCAL_TOKEN)")
 	useTLS := fs.Bool("tls", true, "use TLS to the server (turn off only for servers without HTTPS)")
 	insecure := fs.Bool("insecure-skip-verify", false, "do not verify the server certificate")
-	sub := fs.String("subdomain", "", "requested subdomain (http only)")
+	sub := fs.String("subdomain", "", "requested subdomain (http only, own server)")
+	link := fs.String("link", "", "take back one of your links by name, e.g. k7xq2m (http only, signed in)")
+	fresh := fs.Bool("new", false, "get a new link instead of reusing the last one for this port")
 	remotePort := fs.Int("remote-port", 0, "requested public port (tcp only)")
 	debug := fs.Bool("debug", false, "verbose logging")
 	fs.Usage = func() {
@@ -190,40 +200,69 @@ func runClient(ctx context.Context, kind string, args []string) error {
 	t := client.Tunnel{Type: kind, Local: local}
 	if kind == proto.TypeHTTP {
 		t.Subdomain = *sub
+		if *link != "" {
+			t.Subdomain = linkName(*link)
+		}
 	} else {
 		t.RemotePort = *remotePort
 	}
 	log := newLogger(*debug)
 	account := accountFor(*srv)
-	last := ""
-	return client.Run(ctx, client.Config{
-		Server:             *srv,
-		Token:              *token,
-		Account:            account,
-		TLS:                *useTLS,
-		InsecureSkipVerify: *insecure,
-		Tunnels:            []client.Tunnel{t},
-		Logger:             log,
-		OnReady: func(infos []proto.TunnelInfo) {
-			for _, i := range infos {
-				if i.URL == last {
-					fmt.Println("Reconnected, same link")
-					continue
-				}
-				last = i.URL
-				fmt.Printf("Forwarding %s -> %s\n", i.URL, local)
-				if !i.Expires.IsZero() {
-					hint := ""
-					if account == "" {
-						hint = "; run `publiclocal login` for 7-day links"
-					} else if i.Type == proto.TypeHTTP {
-						hint = "; extend with `publiclocal extend " + i.Name + "`"
+	key := linkKey(*srv, local)
+
+	// Reuse the link this port had last time, unless told otherwise.
+	reusing := false
+	if kind == proto.TypeHTTP && t.Subdomain == "" && !*fresh {
+		if st := loadLink(key); st != nil {
+			t.Subdomain, t.Claim, reusing = st.Name, st.Claim, true
+		}
+	}
+	for {
+		last := ""
+		err := client.Run(ctx, client.Config{
+			Server:             *srv,
+			Token:              *token,
+			Account:            account,
+			TLS:                *useTLS,
+			InsecureSkipVerify: *insecure,
+			Tunnels:            []client.Tunnel{t},
+			Logger:             log,
+			OnReady: func(infos []proto.TunnelInfo) {
+				for _, i := range infos {
+					if i.Type == proto.TypeHTTP && i.Claim != "" {
+						saveLink(key, storedLink{Name: i.Name, Claim: i.Claim, Expires: i.Expires})
 					}
-					fmt.Printf("Link %s%s\n", expiryText(i.Expires), hint)
+					if i.URL == last {
+						fmt.Println("Reconnected, same link")
+						continue
+					}
+					last = i.URL
+					fmt.Printf("Forwarding %s -> %s\n", i.URL, local)
+					if !i.Expires.IsZero() {
+						hint := ""
+						switch {
+						case account == "":
+							hint = "; run `publiclocal login` for 7-day links"
+						case i.Type == proto.TypeHTTP:
+							hint = "; extend with `publiclocal extend " + i.Name + "`"
+						}
+						fmt.Printf("Link %s%s\n", expiryText(i.Expires), hint)
+					}
+					if reusing && i.Name == t.Subdomain {
+						fmt.Println("Same link as last time; use --new for a different one")
+					}
 				}
-			}
-		},
-	})
+			},
+		})
+		var rej *client.RejectedError
+		if reusing && errors.As(err, &rej) {
+			// The remembered link is gone; forget it and ask for a fresh one.
+			deleteLink(key)
+			t.Subdomain, t.Claim, reusing = "", "", false
+			continue
+		}
+		return err
+	}
 }
 
 func parseRange(s string) (int, int, error) {

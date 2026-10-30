@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"crypto/subtle"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -20,8 +21,10 @@ type TunnelStatus struct {
 	Bytes   int64     `json:"bytes"`
 }
 
-// AdminHandler serves the admin API. It has no authentication of its own, so
-// bind it to localhost only.
+// AdminHandler serves the admin API. Bind it to localhost. Requests that a
+// browser made (anything carrying Origin or Sec-Fetch-Site) are refused, so a
+// web page open on the server cannot drive it; AdminToken adds a bearer token
+// on top.
 //
 //	GET  /tunnels          list connected clients
 //	POST /kill?sub=NAME    close the session holding a subdomain
@@ -108,7 +111,20 @@ func (s *Server) AdminHandler() http.Handler {
 		}
 		writeJSON(w, map[string]bool{"ok": true})
 	})
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") != "" {
+			http.Error(w, "the admin API does not accept browser requests", http.StatusForbidden)
+			return
+		}
+		if tok := s.cfg.AdminToken; tok != "" {
+			got, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(got), []byte(tok)) != 1 {
+				http.Error(w, "admin token required", http.StatusUnauthorized)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -138,8 +154,9 @@ func (s *Server) Kill(sub, ip string) int {
 		victims = append(victims, rt.sess)
 	}
 	if ip != "" {
+		key := ipKey(ip)
 		for sess := range s.sessions {
-			if sess.ip == ip {
+			if sess.ipKey == key {
 				victims = append(victims, sess)
 			}
 		}
@@ -152,7 +169,9 @@ func (s *Server) Kill(sub, ip string) int {
 	return len(victims)
 }
 
+// Ban blocks a client network: an IPv4 address, or the /64 of an IPv6 address.
 func (s *Server) Ban(ip string) error {
+	ip = ipKey(ip)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.bans[ip] {
@@ -173,6 +192,7 @@ func (s *Server) Ban(ip string) error {
 }
 
 func (s *Server) Unban(ip string) error {
+	ip = ipKey(ip)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.bans, ip)
@@ -200,7 +220,7 @@ func loadBans(path string) map[string]bool {
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		if ip := strings.TrimSpace(sc.Text()); ip != "" && !strings.HasPrefix(ip, "#") {
-			bans[ip] = true
+			bans[ipKey(ip)] = true
 		}
 	}
 	return bans

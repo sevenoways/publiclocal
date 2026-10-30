@@ -60,8 +60,10 @@ func (s *Server) check(sub string) *Flag {
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", "http://publiclocal-tunnel/", nil)
 	req.Host = sub + "." + s.cfg.Domain
-	req.Header.Set("User-Agent", "PublicLocal-Safety-Check (+https://"+s.cfg.Domain+"/terms)")
-	req.Header.Set("Accept", "text/html")
+	// Look like an ordinary visitor; the terms page says these checks happen.
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	cl := &http.Client{Transport: rt.proxy.Transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := cl.Do(req)
 	if err != nil {
@@ -124,8 +126,9 @@ func (s *Server) Flags() []*Flag {
 	return out
 }
 
-// Suspend closes a link for good: the link is removed, and the IP and the
-// account behind it are banned. It returns what it banned.
+// Suspend closes a link for good: the link is removed, the network and the
+// account behind it are banned, and every other link they hold goes too.
+// It returns what it banned.
 func (s *Server) Suspend(sub string) (ip, login string, ok bool) {
 	sub = strings.ToLower(sub)
 	s.mu.Lock()
@@ -134,27 +137,44 @@ func (s *Server) Suspend(sub string) (ip, login string, ok bool) {
 		s.mu.Unlock()
 		return "", "", false
 	}
+	var key string
 	if res != nil {
-		ip, login = res.IP, res.Account
-		if res.timer != nil {
-			res.timer.Stop()
-		}
-		delete(s.reservations, sub)
+		ip, key, login = res.IP, res.IPKey, res.Account
 	}
 	if rt != nil {
-		ip, login = rt.sess.ip, rt.sess.account
-		delete(s.hosts, sub)
+		ip, key, login = rt.sess.ip, rt.sess.ipKey, rt.sess.account
 	}
-	delete(s.flags, sub)
 	if a := s.accounts[login]; a != nil {
 		a.Banned = true
+		a.TokenHash = ""
+	}
+	// Drop every link from the same network or account, not just this one.
+	for name, r := range s.reservations {
+		if name == sub || r.IPKey == key || (login != "" && r.Account == login) {
+			if r.timer != nil {
+				r.timer.Stop()
+			}
+			delete(s.reservations, name)
+			delete(s.hosts, name)
+			delete(s.flags, name)
+		}
+	}
+	delete(s.hosts, sub)
+	delete(s.flags, sub)
+	var victims []*session
+	for sess := range s.sessions {
+		if sess.ipKey == key || (login != "" && sess.account == login) {
+			victims = append(victims, sess)
+		}
 	}
 	s.saveLocked()
 	s.mu.Unlock()
 	if ip != "" {
 		s.Ban(ip)
-		s.Kill("", ip)
 	}
-	s.log.Warn("link suspended", "sub", sub, "ip", ip, "account", login)
+	for _, v := range victims {
+		v.ys.Close()
+	}
+	s.log.Warn("link suspended", "sub", sub, "ip", ip, "account", login, "sessions_closed", len(victims))
 	return ip, login, true
 }

@@ -19,6 +19,10 @@ This is how the free server at `publiclocal.app` is set up. The same steps work 
 | Random names, 6–8 letters and digits without vowels (never spells a word) | on | |
 | Misuse checker: fetches random live links and flags phishing-like pages | every 10 min, 5 links | `--scan-interval` |
 | GitHub sign-in: accounts younger than 30 days are refused | on when an OAuth app is set | |
+| Warning cookie is signed per link; the continue form only works from the link's own page; the app cannot set cookies for the whole domain | on | |
+| Active links per client network (IPv4 address or IPv6 /64) and per signed-in account | 10 / 50 | `--max-links-per-ip`, `--max-links-per-account` |
+| Client connections per network per minute | 30 | `--connects-per-minute` |
+| Plain HTTP redirects to HTTPS; certificate challenges on tunnel names are refused | on | |
 
 API clients, webhooks and `curl` never see the warning page: it is shown only to browsers (`Mozilla` user agent asking for HTML). Developers can also skip it with the header `PublicLocal-Skip-Warning: 1`.
 
@@ -95,7 +99,7 @@ Signed-in users get 7-day links they can extend. Create an OAuth app at *GitHub 
 | Homepage URL | `https://publiclocal.app` |
 | Authorization callback URL | `https://publiclocal.app/auth/callback` |
 
-Then *Generate a new client secret*, and put the client ID and secret in `/etc/publiclocal.env`. No scopes are requested: the server only reads the public profile (login, ID, account age) and throws the GitHub access token away. Links and accounts are stored in `--state-file`, so they survive restarts and upgrades.
+Then *Generate a new client secret*, and put the client ID and secret in `/etc/publiclocal.env`. Signing in works like a device login: `publiclocal login` prints a code, the browser page asks the user to type it, and only then goes to GitHub, so a login link sent to someone else is useless without the code. No scopes are requested: the server only reads the public profile (login, ID, account age) and throws the GitHub access token away. Links and accounts are stored in `--state-file`, so they survive restarts and upgrades.
 
 ## 4. Handling abuse
 
@@ -117,11 +121,20 @@ publiclocal admin unban-user octocat
 
 The misuse checker only flags; a person decides. Flags are logged as `possible misuse flagged`, so `journalctl -u publiclocal -f | grep flagged` shows them as they happen.
 
-The admin API listens on `127.0.0.1:7001` only. Don't expose it.
+The admin API listens on `127.0.0.1:7001` only and refuses requests made by a browser. Set `--admin-token` (env `PUBLICLOCAL_ADMIN_TOKEN`) to require a token as well, and give it to `publiclocal admin --token` or the same env var.
 
 Set up the abuse mailbox you list in `--abuse-contact` and read it. Hosting providers (OVH included) suspend servers whose owners ignore abuse reports.
 
-## 5. Public Suffix List
+## 5. CAA record
+
+Add a CAA record so only your own Let's Encrypt account can issue certificates for the domain and its tunnels. The account address is in the log at first start (`journalctl -u publiclocal | grep "acme account"`):
+
+```
+CAA  publiclocal.app  0 issue     "letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/<your id>"
+CAA  publiclocal.app  0 issuewild "letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/<your id>"
+```
+
+## 6. Public Suffix List
 
 Without this, a single phishing report can get the **whole** domain blocked by browsers and Google Safe Browsing, taking every user's tunnel down with it. Listing `publiclocal.app` on the [Public Suffix List](https://publicsuffix.org) makes each subdomain its own site to browsers and blocklists, and isolates cookies between tunnels.
 

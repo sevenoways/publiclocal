@@ -1,6 +1,6 @@
 module github.com/sevenoways/publiclocal
 
-go 1.27.0
+go 1.27.3
 
 require (
 	github.com/go-acme/lego/v4 v4.35.2

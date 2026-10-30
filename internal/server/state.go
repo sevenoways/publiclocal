@@ -18,7 +18,8 @@ type reservation struct {
 	Sub       string    `json:"sub"`
 	ClaimHash string    `json:"claim_hash"`
 	Account   string    `json:"account,omitempty"` // GitHub login of the owner, if logged in
-	IP        string    `json:"ip"`
+	IP        string    `json:"ip"`                // client address as seen
+	IPKey     string    `json:"ip_key"`            // what limits and bans are keyed on
 	Created   time.Time `json:"created"`
 	Expires   time.Time `json:"expires,omitzero"` // zero: never
 
@@ -31,15 +32,17 @@ func (r *reservation) expired(now time.Time) bool {
 
 // account is a user who signed in with GitHub.
 type account struct {
-	Login     string    `json:"login"`
-	GitHubID  int64     `json:"github_id"`
-	TokenHash string    `json:"token_hash"`
-	Created   time.Time `json:"created"`
-	Banned    bool      `json:"banned,omitempty"`
+	Login        string    `json:"login"`
+	GitHubID     int64     `json:"github_id"`
+	TokenHash    string    `json:"token_hash,omitempty"`
+	TokenCreated time.Time `json:"token_created,omitzero"`
+	Created      time.Time `json:"created"`
+	Banned       bool      `json:"banned,omitempty"`
 }
 
 // persisted is what the state file holds.
 type persisted struct {
+	CookieKey    string                  `json:"cookie_key"`
 	Reservations map[string]*reservation `json:"reservations"`
 	Accounts     map[string]*account     `json:"accounts"`
 }
@@ -47,21 +50,28 @@ type persisted struct {
 func (s *Server) loadState() {
 	s.reservations = map[string]*reservation{}
 	s.accounts = map[string]*account{}
-	if s.cfg.StateFile == "" {
-		return
-	}
-	b, err := os.ReadFile(s.cfg.StateFile)
-	if err != nil {
-		return
-	}
+	s.dirty = make(chan struct{}, 1)
 	var p persisted
-	if err := json.Unmarshal(b, &p); err != nil {
-		s.log.Error("cannot read state file; starting empty", "err", err)
-		return
+	if s.cfg.StateFile != "" {
+		if b, err := os.ReadFile(s.cfg.StateFile); err == nil {
+			if err := json.Unmarshal(b, &p); err != nil {
+				s.log.Error("cannot read state file; starting empty", "err", err)
+				p = persisted{}
+			}
+		}
+	}
+	if key, err := hex.DecodeString(p.CookieKey); err == nil && len(key) == 32 {
+		s.cookieKey = key
+	} else {
+		s.cookieKey = make([]byte, 32)
+		rand.Read(s.cookieKey)
 	}
 	now := time.Now()
 	for sub, r := range p.Reservations {
 		if !r.expired(now) {
+			if r.IPKey == "" {
+				r.IPKey = ipKey(r.IP)
+			}
 			s.reservations[sub] = r
 			s.scheduleExpiry(r)
 		}
@@ -69,14 +79,42 @@ func (s *Server) loadState() {
 	if p.Accounts != nil {
 		s.accounts = p.Accounts
 	}
+	if s.cfg.StateFile != "" {
+		go s.saveLoop()
+		s.saveLocked() // persist the cookie key
+	}
 }
 
-// saveLocked writes the state file. Callers hold s.mu.
+// saveLocked marks the state changed. Callers hold s.mu. Writes are
+// coalesced by saveLoop, so a burst of changes costs one file write.
 func (s *Server) saveLocked() {
 	if s.cfg.StateFile == "" {
 		return
 	}
-	b, err := json.MarshalIndent(persisted{Reservations: s.reservations, Accounts: s.accounts}, "", "  ")
+	select {
+	case s.dirty <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Server) saveLoop() {
+	for range s.dirty {
+		time.Sleep(time.Second)
+		s.writeState()
+	}
+}
+
+// Flush writes the state now, e.g. at shutdown, instead of waiting for saveLoop.
+func (s *Server) Flush() {
+	if s.cfg.StateFile != "" {
+		s.writeState()
+	}
+}
+
+func (s *Server) writeState() {
+	s.mu.RLock()
+	b, err := json.MarshalIndent(persisted{CookieKey: hex.EncodeToString(s.cookieKey), Reservations: s.reservations, Accounts: s.accounts}, "", "  ")
+	s.mu.RUnlock()
 	if err != nil {
 		s.log.Error("cannot encode state", "err", err)
 		return
@@ -115,6 +153,7 @@ func (s *Server) expire(r *reservation) {
 		return
 	}
 	delete(s.reservations, r.Sub)
+	delete(s.flags, r.Sub)
 	rt := s.hosts[r.Sub]
 	delete(s.hosts, r.Sub)
 	s.saveLocked()

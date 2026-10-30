@@ -64,6 +64,11 @@ type Config struct {
 	MaxTunnelAge       time.Duration // links expire this long after they are created; 0 = never
 	AccountTunnelAge   time.Duration // link lifetime for logged-in users, and how far `extend` pushes expiry
 	MaxSessionsPerIP   int           // 0 = no limit
+	MaxLinksPerIP      int           // active links per client network (IPv4 address or IPv6 /64); 0 = no limit
+	MaxLinksPerAccount int           // active links per signed-in account; 0 = no limit
+	ConnectsPerMinute  int           // control connections per client network; 0 = no limit
+	LoginsPerMinute    int           // login starts per client network; 0 = no limit
+	AdminToken         string        // if set, the admin API requires it as a bearer token
 	RequestsPerMinute  int           // per HTTP tunnel; 0 = no limit
 	MaxBytesPerSession int64         // traffic through one session; 0 = no limit
 	MaxRequestBody     int64         // 0 = no limit
@@ -101,6 +106,10 @@ const (
 	publicGitHubAge     = 30 * 24 * time.Hour
 	publicScanInterval  = 10 * time.Minute
 	publicScanSample    = 5
+	publicLinksPerIP    = 10
+	publicLinksPerAcct  = 50
+	publicConnectsPerMi = 30
+	publicLoginsPerMi   = 5
 	publicSessionsPerIP = 3
 	publicRequestsPerMi = 600
 	publicBytesPerSess  = 2 << 30
@@ -121,6 +130,11 @@ type Server struct {
 	accounts     map[string]*account // by GitHub login
 	logins       map[string]*pendingLogin
 	flags        map[string]*Flag
+
+	cookieKey  []byte        // signs the warning-page cookie
+	dirty      chan struct{} // state changed, save soon
+	connLimit  *rateLimiter  // control connections per client network
+	loginLimit *rateLimiter  // login starts per client network
 }
 
 type route struct {
@@ -144,6 +158,10 @@ func New(cfg Config) *Server {
 		setDefault(&cfg.ScanInterval, publicScanInterval)
 		setDefault(&cfg.ScanSample, publicScanSample)
 		setDefault(&cfg.MaxSessionsPerIP, publicSessionsPerIP)
+		setDefault(&cfg.MaxLinksPerIP, publicLinksPerIP)
+		setDefault(&cfg.MaxLinksPerAccount, publicLinksPerAcct)
+		setDefault(&cfg.ConnectsPerMinute, publicConnectsPerMi)
+		setDefault(&cfg.LoginsPerMinute, publicLoginsPerMi)
 		setDefault(&cfg.RequestsPerMinute, publicRequestsPerMi)
 		setDefault(&cfg.MaxBytesPerSession, publicBytesPerSess)
 		setDefault(&cfg.MaxRequestBody, publicRequestBody)
@@ -165,6 +183,8 @@ func New(cfg Config) *Server {
 		logins:   map[string]*pendingLogin{},
 		flags:    map[string]*Flag{},
 	}
+	s.connLimit = newRateLimiter(cfg.ConnectsPerMinute)
+	s.loginLimit = newRateLimiter(cfg.LoginsPerMinute)
 	s.loadState()
 	if cfg.ScanInterval > 0 {
 		go s.scanLoop()
@@ -227,16 +247,19 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	if s.cfg.HTTPAddr != "" {
 		var h http.Handler = s
-		if s.certs != nil {
-			h = s.certs.HTTPHandler(s) // answers ACME HTTP-01 challenges, passes the rest through
+		if tlsCfg != nil {
+			h = http.HandlerFunc(s.redirectToHTTPS) // plain HTTP only points at HTTPS
 		}
-		hs := &http.Server{Addr: s.cfg.HTTPAddr, Handler: h, ReadHeaderTimeout: 30 * time.Second}
+		if s.certs != nil {
+			h = s.certs.HTTPHandler(h) // answers ACME HTTP-01 challenges, passes the rest through
+		}
+		hs := &http.Server{Addr: s.cfg.HTTPAddr, Handler: h, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 		closers = append(closers, hs)
 		go func() { errc <- hs.ListenAndServe() }()
 		s.log.Info("http listening", "addr", s.cfg.HTTPAddr)
 	}
 	if tlsCfg != nil {
-		hs := &http.Server{Addr: s.cfg.HTTPSAddr, Handler: s, TLSConfig: tlsCfg, ReadHeaderTimeout: 30 * time.Second}
+		hs := &http.Server{Addr: s.cfg.HTTPSAddr, Handler: s, TLSConfig: tlsCfg, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 		closers = append(closers, hs)
 		go func() { errc <- hs.ListenAndServeTLS("", "") }()
 		s.log.Info("https listening", "addr", s.cfg.HTTPSAddr)
@@ -256,7 +279,26 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	for _, c := range closers {
 		c.Close()
 	}
+	s.Flush()
 	return err
+}
+
+// redirectToHTTPS answers plain-HTTP requests with a redirect to the HTTPS
+// address, so tunnel content, cookies and login tokens never travel unencrypted.
+func (s *Server) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
+	host := hostOnly(r.Host)
+	if _, port, err := net.SplitHostPort(s.cfg.HTTPSAddr); err == nil && port != "" && port != "443" {
+		host = net.JoinHostPort(host, port)
+	}
+	http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), http.StatusPermanentRedirect)
+}
+
+func hostOnly(host string) string {
+	host = strings.ToLower(host)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
 }
 
 // ServeControl accepts client sessions on ln until it is closed.
@@ -268,6 +310,10 @@ func (s *Server) ServeControl(ln net.Listener) error {
 				return nil
 			}
 			return err
+		}
+		if !s.connLimit.allow(ipKey(conn.RemoteAddr().String())) {
+			conn.Close()
+			continue
 		}
 		go s.handleSession(conn)
 	}
@@ -329,15 +375,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "publiclocal: tunnel "+sub+" not found or expired", http.StatusBadGateway)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/.well-known/acme-challenge/") {
+		// A tunnel owner must never obtain a certificate for a name they only borrow.
+		http.Error(w, "publiclocal: certificates are not issued for tunnel names", http.StatusNotFound)
+		return
+	}
 	if s.cfg.Public {
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	}
 	if s.cfg.Warning {
 		if r.URL.Path == continuePath {
-			s.acceptWarning(w, r)
+			s.acceptWarning(w, r, host)
 			return
 		}
-		if needsWarning(r) {
+		if s.needsWarning(r, host) {
 			s.serveWarning(w, r, host)
 			return
 		}
@@ -360,6 +411,7 @@ type session struct {
 	ys        *yamux.Session
 	log       *slog.Logger
 	ip        string
+	ipKey     string // see ipKey()
 	account   string // GitHub login, if the client is logged in
 	created   time.Time
 	subs      []string
@@ -382,7 +434,7 @@ func (s *Server) handleSession(conn net.Conn) {
 	}
 	defer ys.Close()
 
-	sess := &session{srv: s, ys: ys, log: log, ip: ip, created: time.Now()}
+	sess := &session{srv: s, ys: ys, log: log, ip: ip, ipKey: ipKey(ip), created: time.Now()}
 	defer sess.release()
 
 	ctrl, err := acceptTimeout(ys, 10*time.Second)
@@ -483,13 +535,13 @@ func (sess *session) setup(h proto.Hello) ([]proto.TunnelInfo, error) {
 func (s *Server) register(sess *session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.bans[sess.ip] {
+	if s.bans[sess.ipKey] {
 		return errors.New("this IP address is banned from this server")
 	}
 	if n := s.cfg.MaxSessionsPerIP; n > 0 {
 		count := 0
 		for other := range s.sessions {
-			if other.ip == sess.ip {
+			if other.ipKey == sess.ipKey {
 				count++
 			}
 		}
@@ -519,27 +571,42 @@ func (sess *session) addHTTP(idx int, sub, claim string) (proto.TunnelInfo, erro
 				return sess.openStream(idx, "")
 			},
 			MaxIdleConnsPerHost: 32,
+			MaxConnsPerHost:     64, // bounds concurrent streams a flood of visitors can open to the client
 			IdleConnTimeout:     90 * time.Second,
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			scrubSetCookies(resp, hostOnly(resp.Request.Host))
+			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			sess.log.Debug("proxy error", "err", err)
 			http.Error(w, "publiclocal: local service unavailable", http.StatusBadGateway)
 		},
 	}
-	if s.cfg.Public && sub != "" && claim == "" {
-		return proto.TunnelInfo{}, errors.New("custom subdomains are not available on this public server; omit --subdomain to get a random one")
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
 
-	// A valid claim takes back an existing link, e.g. after a reconnect. An
-	// expired or unknown claim just gets a fresh link.
+	// A valid claim takes back an existing link, e.g. after a reconnect, and a
+	// signed-in owner can take a link back by name after restarting the
+	// client. Anything else gets a fresh link.
 	res := s.reservations[sub]
-	if claim == "" || res == nil || res.expired(now) || !secretMatches(claim, res.ClaimHash) {
-		res, claim = nil, ""
-		if s.cfg.Public {
-			sub = "" // the public server only hands out random names
+	if res != nil && res.expired(now) {
+		res = nil
+	}
+	claimOK := res != nil && claim != "" && secretMatches(claim, res.ClaimHash)
+	owner := res != nil && res.Account != "" && res.Account == sess.account
+	if res != nil && !claimOK && !owner {
+		res = nil
+	}
+	if res == nil && sub != "" && s.cfg.Public {
+		switch {
+		case claim != "":
+			sub = "" // the old link is gone; hand out a fresh one
+		case sess.account != "":
+			return proto.TunnelInfo{}, fmt.Errorf("link %q is not yours or has expired", sub)
+		default:
+			return proto.TunnelInfo{}, errors.New("custom subdomains are not available on this public server; omit --subdomain to get a random one")
 		}
 	}
 	if res != nil {
@@ -550,7 +617,17 @@ func (sess *session) addHTTP(idx int, sub, claim string) (proto.TunnelInfo, erro
 		if res.Account == "" && sess.account != "" {
 			res.Account = sess.account
 		}
+		if !claimOK { // taken back by name: issue a fresh claim for reconnects
+			claim = newSecret()
+			res.ClaimHash = hashSecret(claim)
+		}
 	} else {
+		if n := s.cfg.MaxLinksPerIP; n > 0 && s.countLinks(func(r *reservation) bool { return r.IPKey == sess.ipKey }) >= n {
+			return proto.TunnelInfo{}, fmt.Errorf("too many active links from your network (limit %d); wait for some to expire", n)
+		}
+		if n := s.cfg.MaxLinksPerAccount; n > 0 && sess.account != "" && s.countLinks(func(r *reservation) bool { return r.Account == sess.account }) >= n {
+			return proto.TunnelInfo{}, fmt.Errorf("too many active links on your account (limit %d); wait for some to expire", n)
+		}
 		switch {
 		case sub == "":
 			for sub == "" || s.reservations[sub] != nil || s.hosts[sub] != nil || reserved[sub] {
@@ -564,7 +641,7 @@ func (sess *session) addHTTP(idx int, sub, claim string) (proto.TunnelInfo, erro
 			return proto.TunnelInfo{}, fmt.Errorf("subdomain %q is in use", sub)
 		}
 		claim = newSecret()
-		res = &reservation{Sub: sub, ClaimHash: hashSecret(claim), Account: sess.account, IP: sess.ip, Created: now}
+		res = &reservation{Sub: sub, ClaimHash: hashSecret(claim), Account: sess.account, IP: sess.ip, IPKey: sess.ipKey, Created: now}
 		age := s.cfg.MaxTunnelAge
 		if sess.account != "" {
 			age = s.cfg.AccountTunnelAge
@@ -580,6 +657,17 @@ func (sess *session) addHTTP(idx int, sub, claim string) (proto.TunnelInfo, erro
 	sess.subs = append(sess.subs, sub)
 	s.saveLocked()
 	return proto.TunnelInfo{Type: proto.TypeHTTP, URL: s.httpURL(sub), Name: sub, Claim: claim, Expires: res.Expires}, nil
+}
+
+// countLinks counts live reservations matching f. Callers hold s.mu.
+func (s *Server) countLinks(f func(*reservation) bool) int {
+	now, n := time.Now(), 0
+	for _, r := range s.reservations {
+		if !r.expired(now) && f(r) {
+			n++
+		}
+	}
+	return n
 }
 
 // rollback forgets the links this session created, after setup failed.

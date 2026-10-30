@@ -11,6 +11,10 @@ import (
 var reserved = map[string]bool{
 	"www": true, "api": true, "admin": true, "mail": true, "status": true,
 	"docs": true, "abuse": true, "app": true, "dashboard": true, "login": true,
+	"auth": true, "oauth": true, "account": true, "accounts": true, "secure": true,
+	"static": true, "cdn": true, "assets": true, "help": true, "support": true,
+	"sso": true, "signin": true, "signup": true, "verify": true, "security": true,
+	"billing": true, "pay": true, "payment": true, "wallet": true, "ns1": true, "ns2": true,
 }
 
 func (s *Server) serveSite(w http.ResponseWriter, r *http.Request) {

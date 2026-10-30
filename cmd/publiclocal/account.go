@@ -137,13 +137,18 @@ func runLogin(ctx context.Context, args []string) error {
 	api := newAPI(server, *useTLS)
 	api.token = ""
 
-	var start struct{ ID, Secret, Code, URL string }
+	if !*useTLS {
+		fmt.Fprintln(os.Stderr, "warning: --tls=false sends your login token unencrypted")
+	}
+	var start struct{ ID, Secret, Code string }
 	if err := api.call("POST", "/api/login/start", nil, &start); err != nil {
 		return fmt.Errorf("cannot start login: %w", err)
 	}
+	// Build the page address here rather than trusting one from the server.
+	loginURL := api.base + "/login?id=" + url.QueryEscape(start.ID)
 	fmt.Printf("Sign in with GitHub to get 7-day links you can extend.\n\n")
-	fmt.Printf("  Your code: %s\n  Open:      %s\n\n", start.Code, start.URL)
-	openBrowser(start.URL)
+	fmt.Printf("  1. Open   %s\n  2. Enter  %s\n\n", loginURL, start.Code)
+	openBrowser(loginURL)
 	fmt.Println("Waiting for you to finish in the browser...")
 
 	deadline := time.Now().Add(10 * time.Minute)
@@ -171,9 +176,12 @@ func runLogin(ctx context.Context, args []string) error {
 }
 
 func runLogout(args []string) error {
-	fs, srv, _ := accountFlags("logout")
+	fs, srv, useTLS := accountFlags("logout")
 	fs.Parse(args)
 	host := serverHost(resolveServer(*srv))
+	if api := newAPI(resolveServer(*srv), *useTLS); api.token != "" {
+		api.call("POST", "/api/logout", nil, nil) // revoke server-side; best effort
+	}
 	creds := loadCredentials()
 	delete(creds, host)
 	if err := saveCredentials(creds); err != nil {
@@ -260,7 +268,7 @@ func expiryText(t time.Time) string {
 	case d <= 0:
 		return "has expired"
 	case d >= 48*time.Hour:
-		return fmt.Sprintf("expires in %d days (%s)", int((d + 12*time.Hour).Hours()/24), when)
+		return fmt.Sprintf("expires in %d days (%s)", int((d+12*time.Hour).Hours()/24), when)
 	case d >= 2*time.Hour:
 		return fmt.Sprintf("expires in %d hours (%s)", int((d + 30*time.Minute).Hours()), when)
 	default:

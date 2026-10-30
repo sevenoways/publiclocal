@@ -139,6 +139,9 @@ func (w *wildcard) obtain() error {
 	if u.reg, err = client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true}); err != nil {
 		return err
 	}
+	// The account URI goes in the domain's CAA record, so no other ACME
+	// account can get certificates for these names.
+	w.log.Info("acme account", "uri", u.reg.URI)
 	res, err := client.Certificate.Obtain(certificate.ObtainRequest{Domains: []string{w.domain, "*." + w.domain}, Bundle: true})
 	if err != nil {
 		return err

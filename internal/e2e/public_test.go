@@ -98,6 +98,7 @@ func TestPublicWarningPage(t *testing.T) {
 	req, _ := http.NewRequest("POST", httpURL+"/.publiclocal/continue", strings.NewReader(form.Encode()))
 	req.Host = u.Host
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://"+u.Host)
 	resp, err := noRedirect.Do(req)
 	if err != nil {
 		t.Fatal(err)

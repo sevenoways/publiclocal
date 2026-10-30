@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -75,7 +77,9 @@ func TestLinksSurviveRestart(t *testing.T) {
 	ch := clientWatch(t, client.Config{Server: fwd.addr, Tunnels: []client.Tunnel{{Type: proto.TypeHTTP, Local: webApp(t)}}})
 	first := next(t, ch, 5*time.Second)[0]
 
-	// "Restart": a new server process reading the same state file.
+	// "Restart": the old server flushes its state on the way out, and a new
+	// server process reads the same file.
+	srv1.Flush()
 	_, ctl2, httpURL2 := startPublic(t, server.Config{StateFile: state})
 	fwd.switchTo(ctl2)
 	srv1.Kill("", "127.0.0.1")
@@ -199,6 +203,31 @@ func api(t *testing.T, httpURL, method, path, token string, body any) (int, apiR
 	return resp.StatusCode, out
 }
 
+// browser is a cookie-keeping client that does not follow redirects.
+func browser(t *testing.T, httpURL string) func(method, path string, form url.Values) *http.Response {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	cl := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return func(method, path string, form url.Values) *http.Response {
+		var body io.Reader
+		if form != nil {
+			body = strings.NewReader(form.Encode())
+		}
+		req, _ := http.NewRequest(method, httpURL+path, body)
+		req.Host = domain
+		if form != nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		resp, err := cl.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return resp
+	}
+}
+
 // login runs the whole browser flow against the fake GitHub and returns the token.
 func login(t *testing.T, httpURL string) (string, apiResult) {
 	t.Helper()
@@ -206,17 +235,22 @@ func login(t *testing.T, httpURL string) (string, apiResult) {
 	if start.ID == "" || start.Code == "" {
 		t.Fatalf("login start: %+v", start)
 	}
-	if code, page := api(t, httpURL, "GET", "/login?id="+start.ID, "", nil); code != 200 {
-		t.Fatalf("confirm page: %d %+v", code, page)
+	b := browser(t, httpURL)
+	if resp := b("GET", "/login?id="+start.ID, nil); resp.StatusCode != 200 {
+		t.Fatalf("code page: %d", resp.StatusCode)
 	}
-	code, redirect := api(t, httpURL, "GET", "/login?id="+start.ID+"&confirm=1", "", nil)
-	if code != http.StatusFound || !strings.Contains(redirect.URL, "/login/oauth/authorize") {
-		t.Fatalf("expected redirect to GitHub, got %d %q", code, redirect.URL)
+	// A wrong code is refused; the right one, typed loosely, sends us to GitHub.
+	if resp := b("POST", "/login", url.Values{"id": {start.ID}, "code": {"nope-nope"}}); !strings.Contains(resp.Header.Get("Location"), "error=wrong") {
+		t.Fatalf("wrong code: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	resp := b("POST", "/login", url.Values{"id": {start.ID}, "code": {strings.ToLower(strings.ReplaceAll(start.Code, "-", " "))}})
+	if resp.StatusCode != http.StatusSeeOther || !strings.Contains(resp.Header.Get("Location"), "/login/oauth/authorize") {
+		t.Fatalf("expected redirect to GitHub, got %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	if _, pending := api(t, httpURL, "POST", "/api/login/poll", "", map[string]string{"id": start.ID, "secret": start.Secret}); pending.Status != "pending" {
 		t.Fatalf("poll before sign-in: %+v", pending)
 	}
-	api(t, httpURL, "GET", "/auth/callback?state="+start.ID+"&code=good-code", "", nil)
+	b("GET", "/auth/callback?state="+start.ID+"&code=good-code", nil)
 	_, done := api(t, httpURL, "POST", "/api/login/poll", "", map[string]string{"id": start.ID, "secret": start.Secret})
 	return done.Token, done
 }

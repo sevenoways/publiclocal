@@ -14,27 +14,46 @@ import (
 	"time"
 )
 
-// Login works like a device login: the CLI asks for a login, opens the
-// returned URL in the browser, and polls until the user has signed in with
-// GitHub there. The CLI then holds an account token it sends in its Hello.
+// Login works like a device login: the CLI asks for a login and shows a code,
+// the user opens the login page, types the code, and signs in with GitHub;
+// the CLI polls until that has happened and then holds an account token it
+// sends in its Hello.
 //
-//	POST /api/login/start   -> {id, secret, url}
-//	GET  /login?id=ID       -> redirects to GitHub
+// Typing the code (rather than the page showing it) means a login link sent
+// to someone else is useless without the code from the attacker's terminal,
+// and a cookie set when the code is accepted ties the GitHub callback to the
+// same browser.
+//
+//	POST /api/login/start   -> {id, secret, code}
+//	GET  /login?id=ID       page asking for the code
+//	POST /login             {id, code} -> redirects to GitHub, sets a cookie
 //	GET  /auth/callback     <- GitHub redirects back here
 //	POST /api/login/poll    {id, secret} -> {token, login} once signed in
-//	GET  /api/me            Authorization: Bearer TOKEN -> {login}
+//	GET  /api/me            Authorization: Bearer TOKEN -> {login, links}
 //	POST /api/extend        Authorization: Bearer TOKEN, {name} -> {expires}
+//	POST /api/logout        Authorization: Bearer TOKEN
 
 type pendingLogin struct {
-	code       string // shown in the terminal and the browser, so the user can tell it's their login
+	code       string
 	secretHash string
+	ipKey      string
 	created    time.Time
+	attempts   int
+	confirmed  bool
+	browser    string // hash of the cookie set when the code was accepted
 	token      string // set once the user has signed in
 	login      string
 	err        string
 }
 
-const loginTTL = 10 * time.Minute
+const (
+	loginTTL         = 10 * time.Minute
+	loginCookie      = "publiclocal_login"
+	maxCodeAttempts  = 5
+	maxPendingPerIP  = 20
+	maxPendingLogins = 10000
+	tokenMaxAge      = 180 * 24 * time.Hour
+)
 
 func (s *Server) loginEnabled() bool { return s.cfg.GitHubClientID != "" }
 
@@ -42,7 +61,7 @@ func (s *Server) loginEnabled() bool { return s.cfg.GitHubClientID != "" }
 // It reports whether it handled the request.
 func (s *Server) serveAccountAPI(w http.ResponseWriter, r *http.Request) bool {
 	switch r.URL.Path {
-	case "/api/login/start", "/api/login/poll", "/login", "/auth/callback", "/api/me", "/api/extend":
+	case "/api/login/start", "/api/login/poll", "/login", "/auth/callback", "/api/me", "/api/extend", "/api/logout":
 	default:
 		return false
 	}
@@ -57,13 +76,19 @@ func (s *Server) serveAccountAPI(w http.ResponseWriter, r *http.Request) bool {
 	case "/api/login/poll":
 		s.loginPoll(w, r)
 	case "/login":
-		s.loginRedirect(w, r)
+		if r.Method == http.MethodPost {
+			s.loginConfirm(w, r)
+		} else {
+			s.loginPage(w, r)
+		}
 	case "/auth/callback":
 		s.loginCallback(w, r)
 	case "/api/me":
 		s.me(w, r)
 	case "/api/extend":
 		s.extend(w, r)
+	case "/api/logout":
+		s.logout(w, r)
 	}
 	return true
 }
@@ -81,72 +106,127 @@ func (s *Server) loginStart(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusMethodNotAllowed, "use POST")
 		return
 	}
+	key := ipKey(r.RemoteAddr)
+	if !s.loginLimit.allow(key) {
+		apiError(w, http.StatusTooManyRequests, "too many login attempts; try again in a minute")
+		return
+	}
 	id, secret := newSecret()[:16], newSecret()
+	code := strings.ToUpper(randomName(4, 4) + "-" + randomName(4, 4))
 	s.mu.Lock()
 	now := time.Now()
+	mine := 0
 	for k, p := range s.logins {
 		if now.Sub(p.created) > loginTTL {
 			delete(s.logins, k)
+		} else if p.ipKey == key {
+			mine++
 		}
 	}
-	if len(s.logins) > 10000 {
+	if mine >= maxPendingPerIP || len(s.logins) >= maxPendingLogins {
 		s.mu.Unlock()
-		apiError(w, http.StatusServiceUnavailable, "too many logins in progress, try again shortly")
+		apiError(w, http.StatusTooManyRequests, "too many logins in progress; try again shortly")
 		return
 	}
-	code := strings.ToUpper(randomName(4, 4) + "-" + randomName(4, 4))
-	s.logins[id] = &pendingLogin{code: code, secretHash: hashSecret(secret), created: now}
+	s.logins[id] = &pendingLogin{code: code, secretHash: hashSecret(secret), ipKey: key, created: now}
 	s.mu.Unlock()
 	writeJSON(w, map[string]string{"id": id, "secret": secret, "code": code, "url": s.baseURL() + "/login?id=" + id})
 }
 
-func (s *Server) loginRedirect(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+func (s *Server) pending(id string) *pendingLogin {
 	s.mu.RLock()
 	p := s.logins[id]
 	s.mu.RUnlock()
 	if p == nil || time.Since(p.created) > loginTTL {
-		loginPage(w, http.StatusBadRequest, "This login link has expired", "Run publiclocal login again.")
+		return nil
+	}
+	return p
+}
+
+func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if s.pending(id) == nil {
+		loginResult(w, http.StatusBadRequest, "This login link has expired", "Run publiclocal login again.")
 		return
 	}
-	// Ask the user to compare codes first, so a login link someone else sent
-	// can't be used to sign them in to the sender's terminal.
-	if r.URL.Query().Get("confirm") != "1" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		confirmTmpl.Execute(w, struct{ ID, Code string }{id, p.code})
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	confirmTmpl.Execute(w, struct {
+		ID, Error string
+	}{id, r.URL.Query().Get("error")})
+}
+
+// loginConfirm checks the code the user typed, then sends them to GitHub.
+func (s *Server) loginConfirm(w http.ResponseWriter, r *http.Request) {
+	id := r.PostFormValue("id")
+	typed := strings.ToUpper(strings.NewReplacer(" ", "", "-", "", "_", "").Replace(r.PostFormValue("code")))
+	s.mu.Lock()
+	p := s.logins[id]
+	if p == nil || time.Since(p.created) > loginTTL {
+		s.mu.Unlock()
+		loginResult(w, http.StatusBadRequest, "This login link has expired", "Run publiclocal login again.")
 		return
 	}
+	p.attempts++
+	want := strings.ReplaceAll(p.code, "-", "")
+	if p.attempts > maxCodeAttempts {
+		delete(s.logins, id)
+		s.mu.Unlock()
+		loginResult(w, http.StatusForbidden, "Too many wrong codes", "Run publiclocal login again to get a new one.")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(typed), []byte(want)) != 1 {
+		s.mu.Unlock()
+		http.Redirect(w, r, "/login?id="+url.QueryEscape(id)+"&error=wrong", http.StatusSeeOther)
+		return
+	}
+	nonce := newSecret()
+	p.confirmed = true
+	p.browser = hashSecret(nonce)
+	s.mu.Unlock()
+
+	http.SetCookie(w, &http.Cookie{
+		Name: loginCookie, Value: nonce, Path: "/", MaxAge: int(loginTTL.Seconds()),
+		HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode,
+	})
 	q := url.Values{
 		"client_id":    {s.cfg.GitHubClientID},
 		"redirect_uri": {s.baseURL() + "/auth/callback"},
 		"state":        {id},
 		"allow_signup": {"false"},
 	}
-	http.Redirect(w, r, s.cfg.GitHubURL+"/login/oauth/authorize?"+q.Encode(), http.StatusFound)
+	http.Redirect(w, r, s.cfg.GitHubURL+"/login/oauth/authorize?"+q.Encode(), http.StatusSeeOther)
 }
 
 func (s *Server) loginCallback(w http.ResponseWriter, r *http.Request) {
 	id, code := r.URL.Query().Get("state"), r.URL.Query().Get("code")
-	s.mu.RLock()
-	p := s.logins[id]
-	s.mu.RUnlock()
-	if p == nil || code == "" || time.Since(p.created) > loginTTL {
-		loginPage(w, http.StatusBadRequest, "This login link has expired", "Run publiclocal login again.")
+	p := s.pending(id)
+	if p == nil || code == "" {
+		loginResult(w, http.StatusBadRequest, "This login link has expired", "Run publiclocal login again.")
 		return
 	}
+	cookie, err := r.Cookie(loginCookie)
+	s.mu.RLock()
+	bound := p.confirmed && err == nil && secretMatches(cookie.Value, p.browser)
+	s.mu.RUnlock()
+	if !bound {
+		loginResult(w, http.StatusForbidden, "This sign-in did not start in this browser", "Open the login page from your own terminal's publiclocal login and enter the code there.")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: loginCookie, Value: "", Path: "/", MaxAge: -1})
+
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	user, err := s.githubUser(ctx, code)
 	if err != nil {
 		s.log.Warn("github login failed", "err", err)
-		loginPage(w, http.StatusBadGateway, "GitHub sign-in failed", "Please try publiclocal login again.")
+		loginResult(w, http.StatusBadGateway, "GitHub sign-in failed", "Please try publiclocal login again.")
 		return
 	}
 	if age := s.cfg.MinGitHubAccountAge; age > 0 && time.Since(user.CreatedAt) < age {
 		s.mu.Lock()
 		p.err = fmt.Sprintf("GitHub accounts must be at least %d days old to sign in", int(age.Hours()/24))
 		s.mu.Unlock()
-		loginPage(w, http.StatusForbidden, "Your GitHub account is too new", p.err+". You can still use PublicLocal without signing in.")
+		loginResult(w, http.StatusForbidden, "Your GitHub account is too new", p.err+". You can still use PublicLocal without signing in.")
 		return
 	}
 
@@ -160,15 +240,16 @@ func (s *Server) loginCallback(w http.ResponseWriter, r *http.Request) {
 	if acct.Banned {
 		p.err = "this account is suspended"
 		s.mu.Unlock()
-		loginPage(w, http.StatusForbidden, "This account is suspended", "Contact abuse@"+s.cfg.Domain+" if you think this is a mistake.")
+		loginResult(w, http.StatusForbidden, "This account is suspended", "Contact abuse@"+s.cfg.Domain+" if you think this is a mistake.")
 		return
 	}
 	acct.TokenHash = hashSecret(token) // one active login per account; signing in again replaces it
+	acct.TokenCreated = time.Now()
 	p.token, p.login = token, user.Login
 	s.saveLocked()
 	s.mu.Unlock()
 	s.log.Info("account signed in", "login", user.Login)
-	loginPage(w, http.StatusOK, "Signed in as "+user.Login, "You can close this tab and go back to your terminal.")
+	loginResult(w, http.StatusOK, "Signed in as "+user.Login, "You can close this tab and go back to your terminal.")
 }
 
 func (s *Server) loginPoll(w http.ResponseWriter, r *http.Request) {
@@ -203,8 +284,11 @@ func (s *Server) accountByToken(token string) (string, error) {
 	defer s.mu.RUnlock()
 	for _, a := range s.accounts {
 		if a.TokenHash != "" && subtle.ConstantTimeCompare([]byte(h), []byte(a.TokenHash)) == 1 {
-			if a.Banned {
+			switch {
+			case a.Banned:
 				return "", errors.New("this account is suspended")
+			case !a.TokenCreated.IsZero() && time.Since(a.TokenCreated) > tokenMaxAge:
+				return "", errors.New("your login has expired; run publiclocal login again")
 			}
 			return a.Login, nil
 		}
@@ -283,6 +367,21 @@ func (s *Server) extend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"url": s.httpURL(res.Sub), "expires": res.Expires})
 }
 
+// logout revokes the account token so a copied token stops working.
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	login, ok := s.bearer(w, r)
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	if a := s.accounts[login]; a != nil {
+		a.TokenHash = ""
+		s.saveLocked()
+	}
+	s.mu.Unlock()
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 type githubUser struct {
 	Login     string    `json:"login"`
 	ID        int64     `json:"id"`
@@ -340,27 +439,32 @@ func (s *Server) githubUser(ctx context.Context, code string) (*githubUser, erro
 	return &u, nil
 }
 
-var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · PublicLocal</title><link rel="stylesheet" href="/style.css"></head>
-<body><main class="wrap prose" style="padding:64px 16px"><h1>{{.Title}}</h1><p>{{.Body}}</p><p><a href="/">PublicLocal home</a></p></main></body></html>
-`))
-
 var confirmTmpl = template.Must(template.New("confirm").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in · PublicLocal</title><link rel="stylesheet" href="/style.css"></head>
+<meta name="robots" content="noindex"><title>Sign in · PublicLocal</title><link rel="stylesheet" href="/style.css"></head>
 <body><main class="wrap prose" style="padding:64px 16px">
 <h1>Sign in to PublicLocal</h1>
-<p>Check that this code matches the one in your terminal:</p>
-<p class="mono" style="font-size:32px;font-weight:700;letter-spacing:.08em">{{.Code}}</p>
-<p>If it doesn't match, or you didn't run <code>publiclocal login</code> yourself, close this page.</p>
-<p><a class="btn primary" href="/login?id={{.ID}}&amp;confirm=1">Continue with GitHub</a></p>
-<p style="color:var(--muted);font-size:15px">Signing in gives your links 7 days instead of 24 hours, and lets you extend them. PublicLocal only reads your public GitHub profile.</p>
+<p>Enter the code shown in your terminal by <code>publiclocal login</code>:</p>
+{{if .Error}}<p style="color:#c0392b"><strong>That code is not right.</strong> Check your terminal and try again.</p>{{end}}
+<form method="post" action="/login">
+<input type="hidden" name="id" value="{{.ID}}">
+<input name="code" autocomplete="one-time-code" autofocus required placeholder="XXXX-XXXX" class="mono"
+  style="font-size:26px;letter-spacing:.12em;text-transform:uppercase;padding:10px 14px;width:100%;max-width:320px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg)">
+<p><button class="btn primary" type="submit" style="border:0;cursor:pointer">Continue with GitHub</button></p>
+</form>
+<p style="color:var(--muted);font-size:15px">If you did not run <code>publiclocal login</code> yourself, close this page. Never enter a code someone else sent you.<br>
+Signing in gives your links 7 days instead of 24 hours, and lets you extend them. PublicLocal only reads your public GitHub profile.</p>
 </main></body></html>
 `))
 
-func loginPage(w http.ResponseWriter, code int, title, body string) {
+var resultTmpl = template.Must(template.New("result").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>{{.Title}} · PublicLocal</title><link rel="stylesheet" href="/style.css"></head>
+<body><main class="wrap prose" style="padding:64px 16px"><h1>{{.Title}}</h1><p>{{.Body}}</p><p><a href="/">PublicLocal home</a></p></main></body></html>
+`))
+
+func loginResult(w http.ResponseWriter, code int, title, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)
-	loginTmpl.Execute(w, struct{ Title, Body string }{title, body})
+	resultTmpl.Execute(w, struct{ Title, Body string }{title, body})
 }

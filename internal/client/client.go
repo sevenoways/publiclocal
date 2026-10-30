@@ -25,7 +25,9 @@ type Tunnel struct {
 	Subdomain  string // HTTP only; empty for a random one
 	RemotePort int    // TCP only; 0 for a random one
 
-	claim string // lets a reconnect take back the same link
+	// Claim takes back a link from an earlier run. The server returns it in
+	// TunnelInfo; callers may store it to reuse a link across restarts.
+	Claim string
 }
 
 type Config struct {
@@ -105,7 +107,7 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 	}
 	hello := proto.Hello{Version: proto.Version, Token: cfg.Token, Account: cfg.Account}
 	for _, t := range cfg.Tunnels {
-		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.claim})
+		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.Claim})
 	}
 	ctrl.SetDeadline(time.Now().Add(15 * time.Second))
 	if err := proto.Write(ctrl, hello); err != nil {
@@ -124,7 +126,7 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 	ctrl.SetDeadline(time.Time{})
 	for i, info := range resp.Tunnels {
 		if info.Claim != "" {
-			cfg.Tunnels[i].claim = info.Claim
+			cfg.Tunnels[i].Claim = info.Claim
 			cfg.Tunnels[i].Subdomain = info.Name
 		}
 	}
