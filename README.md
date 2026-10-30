@@ -1,8 +1,8 @@
 <h1 align="center">PublicLocal</h1>
 
 <p align="center">
-  <b>Self-hosted ngrok alternative.</b> Expose localhost to the internet over HTTPS and TCP through your own server.<br>
-  One small Go binary. No account, no limits, no vendor.
+  <b>Open-source ngrok alternative.</b> Share localhost with a public HTTPS link in one command,<br>
+  free on <a href="https://publiclocal.app">publiclocal.app</a> or on your own server. One small Go binary.
 </p>
 
 <p align="center">
