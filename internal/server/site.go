@@ -23,9 +23,11 @@ func (s *Server) serveSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h := w.Header()
-	// The analytics script on sevenlytics.com is the only third party allowed.
-	h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://sevenlytics.com; "+
-		"connect-src 'self' https://sevenlytics.com; img-src 'self' data: https://sevenlytics.com; frame-ancestors 'none'")
+	// Analytics (Rybbit on sevenlytics.com, Google Analytics behind a consent prompt) are the only third parties allowed.
+	h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; "+
+		"script-src 'self' 'unsafe-inline' https://sevenlytics.com https://www.googletagmanager.com; "+
+		"connect-src 'self' https://sevenlytics.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; "+
+		"img-src 'self' data: https://sevenlytics.com https://*.google-analytics.com https://*.googletagmanager.com; frame-ancestors 'none'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	if s.scheme == "https" {

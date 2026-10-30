@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PublicLocal documentation – install, commands, self-hosting, MCP</title>
+<meta name="description" content="How to install PublicLocal, expose localhost with one command, sign in for 7-day links, run your own tunnel server on your domain, and connect AI assistants over MCP.">
+<link rel="canonical" href="https://publiclocal.app/docs">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PublicLocal documentation">
+<meta property="og:description" content="Install, commands, self-hosting on your own domain, and MCP setup for AI assistants.">
+<meta property="og:url" content="https://publiclocal.app/docs">
+<meta property="og:image" content="https://publiclocal.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<script src="https://sevenlytics.com/api/script.js?siteId=6fd9158ea898" defer></script>
+<script src="/analytics.js"></script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"PublicLocal documentation","description":"Install PublicLocal, expose localhost, self-host the server and connect AI assistants over MCP.","url":"https://publiclocal.app/docs","dateModified":"2026-10-30","author":{"@type":"Organization","name":"PublicLocal","url":"https://publiclocal.app/"},"about":{"@type":"SoftwareApplication","name":"PublicLocal","url":"https://publiclocal.app/"}}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2557e8"/><path d="M9 20a7 7 0 0 1 14 0" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="16" cy="20" r="2.5" fill="#fff"/></svg>PublicLocal</a>
+    <nav class="nav" aria-label="Main"><a href="/">Home</a><a href="/ngrok-alternative">vs ngrok</a><a href="/terms">Fair use</a><a href="https://github.com/sevenoways/publiclocal">GitHub</a></nav>
+  </div>
+</header>
+
+<main class="wrap prose">
+  <h1>Documentation</h1>
+  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 30 October 2026 · v0.7</span></p>
+  <nav class="toc" aria-label="On this page">
+    <a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+
+  <h2 id="install">Install</h2>
+  <p>PublicLocal is one static binary for Linux, macOS, Windows and FreeBSD (amd64 and arm64).</p>
+<pre class="block"><span class="dim"># Linux / macOS</span>
+curl -fsSL https://publiclocal.app/install.sh | sh
+
+<span class="dim"># Windows (PowerShell)</span>
+irm https://publiclocal.app/install.ps1 | iex
+
+<span class="dim"># Docker</span>
+docker run --rm --network host ghcr.io/sevenoways/publiclocal http 3000
+
+<span class="dim"># Go</span>
+go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest</pre>
+  <p>Both installers download the build for your system from <a href="https://github.com/sevenoways/publiclocal/releases/latest">GitHub Releases</a> and verify its SHA-256 checksum before installing. Run the same command again to update.</p>
+
+  <h2 id="quick-start">Quick start</h2>
+  <p>Start your app, then share its port:</p>
+<pre class="block"><span class="dim">$</span> publiclocal http 3000
+Forwarding <span class="url">https://k7xq2m.publiclocal.app</span> -> 127.0.0.1:3000
+Link expires in 24 hours; run `publiclocal login` for 7-day links</pre>
+  <p>Anyone with the link reaches your app over HTTPS. Press <kbd>Ctrl+C</kbd> to stop. If you run the command again later, you get the <strong>same link</strong> back until it expires; add <code>--new</code> for a different one. You can also forward to another host on your network: <code>publiclocal http 192.168.1.20:8080</code>.</p>
+  <p>Browsers see a short "temporary developer link" notice the first time they open a link on the free server. Webhooks, API calls and <code>curl</code> go straight through, and you can skip the notice in any client by sending the header <code>PublicLocal-Skip-Warning: 1</code>.</p>
+
+  <h2 id="login">Sign in for 7-day links</h2>
+<pre class="block"><span class="dim">$</span> publiclocal login            <span class="dim"># opens GitHub sign-in; type the code shown in your terminal</span>
+<span class="dim">$</span> publiclocal http 3000        <span class="dim"># links now last 7 days</span>
+<span class="dim">$</span> publiclocal extend k7xq2m    <span class="dim"># another 7 days, as often as you like</span>
+<span class="dim">$</span> publiclocal links            <span class="dim"># your links and when they expire</span>
+<span class="dim">$</span> publiclocal logout</pre>
+  <p>Sign-in reads only your public GitHub profile and is used to tie links to you. GitHub accounts younger than 30 days cannot sign in, which keeps throwaway accounts out. To take a link back by name after a restart, use <code>publiclocal http --link k7xq2m 3000</code>.</p>
+
+  <h2 id="commands">Command reference</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+    <tbody>
+    <tr><td><code>publiclocal http &lt;port&gt;</code></td><td>Public HTTPS link for a local HTTP server. Flags: <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
+    <tr><td><code>publiclocal tcp &lt;port&gt;</code></td><td>Public TCP port for SSH, databases or game servers. Self-hosted servers only. <code>--remote-port N</code> asks for a fixed port.</td></tr>
+    <tr><td><code>publiclocal login</code> / <code>logout</code></td><td>Sign in with GitHub for 7-day links; sign out and revoke the token.</td></tr>
+    <tr><td><code>publiclocal links</code></td><td>List your links, whether they are online, and when they expire.</td></tr>
+    <tr><td><code>publiclocal extend &lt;link&gt;</code></td><td>Push a link's expiry to 7 days from now (signed in).</td></tr>
+    <tr><td><code>publiclocal mcp</code></td><td>Run the MCP server for AI assistants. Flags: <code>--allow-ports 3000,5173</code>, <code>--max-tunnels</code>.</td></tr>
+    <tr><td><code>publiclocal server</code></td><td>Run your own tunnel server. See <a href="#self-host">self-hosting</a>.</td></tr>
+    <tr><td><code>publiclocal admin</code></td><td>On your own server: list, kill, ban, suspend, flags, scan.</td></tr>
+    <tr><td><code>publiclocal version</code></td><td>Print the version.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Environment variables: <code>PUBLICLOCAL_SERVER</code>, <code>PUBLICLOCAL_TOKEN</code> (own server), <code>PUBLICLOCAL_ACCOUNT</code> (login token). Without <code>--server</code> the client uses the free server at publiclocal.app.</p>
+
+  <h2 id="self-host">Self-hosting on your own domain</h2>
+  <p>Your own server gives you addresses on your domain, names you choose, no expiry, TCP tunnels and your own limits. Any small VPS with a public IP works; bandwidth matters more than CPU.</p>
+  <h3>1. DNS</h3>
+  <p>Point a name and its wildcard at the server (the wildcard is what gives each tunnel its own subdomain):</p>
+<pre class="block">tunnel.example.com.    A  203.0.113.10
+*.tunnel.example.com.  A  203.0.113.10</pre>
+  <h3>2. Server</h3>
+  <p>Open ports 80, 443, 7000 and the TCP range (default 10000–20000), then:</p>
+<pre class="block">curl -fsSL https://publiclocal.app/install.sh | sh
+publiclocal server --domain tunnel.example.com --tokens "$(openssl rand -hex 24)" --acme-email you@example.com</pre>
+  <p>Certificates are issued by Let's Encrypt per subdomain on first use. Busy servers can use one wildcard certificate instead with <code>--cloudflare-token</code> (a Cloudflare API token that may edit the zone's DNS). A systemd unit and Docker image are in the <a href="https://github.com/sevenoways/publiclocal/blob/main/docs/public-instance.md">public-instance guide</a>.</p>
+  <h3>3. Clients</h3>
+<pre class="block">export PUBLICLOCAL_SERVER=tunnel.example.com
+export PUBLICLOCAL_TOKEN=the-token-from-above
+
+publiclocal http --subdomain myapp 8080   <span class="dim"># https://myapp.tunnel.example.com</span>
+publiclocal tcp 22                        <span class="dim"># tcp://tunnel.example.com:1xxxx</span>
+publiclocal tcp --remote-port 15432 5432</pre>
+  <h3>Server flags</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+    <tbody>
+    <tr><td><code>--domain</code></td><td></td><td>Base domain; tunnels are served at <code>name.domain</code>. Required.</td></tr>
+    <tr><td><code>--tokens</code></td><td></td><td>Comma-separated tokens clients must present. Empty allows anyone.</td></tr>
+    <tr><td><code>--control</code></td><td><code>:7000</code></td><td>Port clients connect to.</td></tr>
+    <tr><td><code>--http</code>, <code>--https</code></td><td><code>:80</code>, <code>:443</code></td><td>Set <code>--https ""</code> to run plain HTTP behind your own proxy (clients then need <code>--tls=false</code>).</td></tr>
+    <tr><td><code>--tcp-ports</code></td><td><code>10000-20000</code></td><td>Port range for TCP tunnels.</td></tr>
+    <tr><td><code>--cloudflare-token</code></td><td></td><td>One wildcard certificate via Cloudflare DNS instead of a certificate per name.</td></tr>
+    <tr><td><code>--state-file</code></td><td></td><td>Keep links and accounts across restarts.</td></tr>
+    <tr><td><code>--public</code></td><td>off</td><td>Safeguards for an open instance: random names only, no TCP, warning page, limits, misuse checks. Needs <code>--abuse-contact</code>.</td></tr>
+    <tr><td><code>--max-tunnel-age</code></td><td>never (public: 24h)</td><td>Link lifetime.</td></tr>
+    <tr><td><code>--github-client-id</code>, <code>--github-client-secret</code></td><td></td><td>Enable <code>publiclocal login</code> with your own GitHub OAuth app.</td></tr>
+    <tr><td><code>--admin</code>, <code>--admin-token</code></td><td><code>127.0.0.1:7001</code></td><td>Local admin API for <code>publiclocal admin</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The full list is in <code>publiclocal server -h</code>, and the guide for running an open public instance (abuse handling, Public Suffix List, CAA records) is in the <a href="https://github.com/sevenoways/publiclocal/blob/main/docs/public-instance.md">repository</a>.</p>
+
+  <h2 id="mcp">AI assistants (MCP)</h2>
+  <p>PublicLocal ships an <a href="https://modelcontextprotocol.io">MCP</a> server with three tools: <code>share_local_port</code>, <code>list_tunnels</code> and <code>stop_tunnel</code>. It runs on your machine, started by the assistant, because the tunnel has to begin where your app runs. Tunnels close when the assistant session ends.</p>
+<pre class="block"><span class="dim"># Claude Code</span>
+claude mcp add publiclocal -- publiclocal mcp
+
+<span class="dim"># OpenAI Codex CLI</span>
+codex mcp add publiclocal -- publiclocal mcp
+
+<span class="dim"># Claude Desktop (claude_desktop_config.json), Cursor (.cursor/mcp.json), Gemini CLI (~/.gemini/settings.json)</span>
+{ "mcpServers": { "publiclocal": { "command": "publiclocal", "args": ["mcp"] } } }
+
+<span class="dim"># VS Code (.vscode/mcp.json)</span>
+{ "servers": { "publiclocal": { "type": "stdio", "command": "publiclocal", "args": ["mcp"] } } }</pre>
+  <p>Add <code>"--allow-ports", "3000,5173"</code> to <code>args</code> so the assistant can only ever share the ports you list. ChatGPT's apps connect only to remote MCP servers and cannot start programs on your computer, so use the Codex CLI for OpenAI models. Full details: <a href="https://github.com/sevenoways/publiclocal/blob/main/docs/mcp.md">MCP guide</a>.</p>
+
+  <h2 id="limits">Free server limits</h2>
+  <ul>
+    <li>Random names, 6–8 characters. Links last 24 hours, or 7 days signed in (extendable).</li>
+    <li>HTTP and HTTPS only. TCP needs your own server.</li>
+    <li>3 tunnels at a time and 10 active links per network (50 per account); 600 requests per minute per tunnel; 2 GB per session; 10 MB per request.</li>
+    <li>Browsers see a notice before tunnel content. Random live links are checked for phishing. See <a href="/terms">fair use</a>.</li>
+  </ul>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+  <p><strong>"local service unavailable"</strong> when opening the link: nothing is listening on the port you shared, or your app only listens on a specific interface. Check with <code>curl localhost:3000</code>.</p>
+  <p><strong>Your app redirects to the wrong host:</strong> the original <code>Host</code> header is passed through, and <code>X-Forwarded-Proto: https</code> is set. Frameworks that check allowed hosts (Django <code>ALLOWED_HOSTS</code>, Rails <code>config.hosts</code>, Vite <code>server.allowedHosts</code>) need the tunnel host added.</p>
+  <p><strong>Webhooks hit the warning page:</strong> they shouldn't; the notice is only for browsers. If a service sends a browser-like user agent, add the header <code>PublicLocal-Skip-Warning: 1</code> to its request if you can, or self-host without <code>--public</code>.</p>
+  <p><strong>"This app can't run on your PC"</strong> on Windows: you downloaded the ARM64 build. Use the installer command, which picks the right one.</p>
+  <p>Anything else: <a href="https://github.com/sevenoways/publiclocal/issues">open an issue</a>.</p>
+  <p style="margin-bottom:64px"></p>
+</main>
+
+<footer>
+  <div class="wrap"><div class="fine"><span>© 2026 Sevenoways Innovations · <a href="/">Home</a> · <a href="/terms">Fair use</a> · <a href="mailto:abuse@publiclocal.app">Report abuse</a></span><span><a href="https://github.com/sevenoways/publiclocal">GitHub</a></span></div></div>
+</footer>
+</body>
+</html>

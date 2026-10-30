@@ -3,180 +3,276 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PublicLocal: make localhost public</title>
-<meta name="description" content="Free, open-source ngrok alternative. Share localhost with a public HTTPS link in one command, or self-host your own tunnel server. No account needed.">
+<title>PublicLocal – Make localhost public | Free open-source ngrok alternative</title>
+<meta name="description" content="PublicLocal gives your localhost a public HTTPS URL in one command. Free, open source (MIT), no account needed, and you can self-host it on your own domain. An ngrok alternative for webhooks, demos and mobile testing.">
 <link rel="canonical" href="https://publiclocal.app/">
-<meta property="og:title" content="PublicLocal: make localhost public">
-<meta property="og:description" content="Share localhost with a public HTTPS link in one command. Free, open source, self-hostable.">
-<meta property="og:url" content="https://publiclocal.app/">
+<meta name="theme-color" content="#2557e8">
 <meta property="og:type" content="website">
-<meta name="twitter:card" content="summary">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232557e8'/%3E%3Cpath d='M9 20a7 7 0 0 1 14 0' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='20' r='2.5' fill='white'/%3E%3C/svg%3E">
+<meta property="og:site_name" content="PublicLocal">
+<meta property="og:title" content="PublicLocal – Make localhost public">
+<meta property="og:description" content="Share localhost with a public HTTPS link in one command. Free, open source, self-hostable. An ngrok alternative.">
+<meta property="og:url" content="https://publiclocal.app/">
+<meta property="og:image" content="https://publiclocal.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="PublicLocal: make localhost public">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="PublicLocal – Make localhost public">
+<meta name="twitter:description" content="Share localhost with a public HTTPS link in one command. Free, open source, self-hostable.">
+<meta name="twitter:image" content="https://publiclocal.app/og.png">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/logo.png">
 <link rel="stylesheet" href="/style.css">
 <script src="https://sevenlytics.com/api/script.js?siteId=6fd9158ea898" defer></script>
+<script src="/analytics.js"></script>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"PublicLocal","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows, FreeBSD","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://publiclocal.app/","codeRepository":"https://github.com/sevenoways/publiclocal","description":"Free, open-source ngrok alternative: share localhost with a public HTTPS link, or self-host your own tunnel server."}
+{"@context":"https://schema.org","@graph":[
+{"@type":"Organization","@id":"https://publiclocal.app/#org","name":"PublicLocal","url":"https://publiclocal.app/","logo":"https://publiclocal.app/logo.png","sameAs":["https://github.com/sevenoways/publiclocal"],"contactPoint":{"@type":"ContactPoint","contactType":"abuse","email":"abuse@publiclocal.app"}},
+{"@type":"WebSite","@id":"https://publiclocal.app/#site","url":"https://publiclocal.app/","name":"PublicLocal","publisher":{"@id":"https://publiclocal.app/#org"}},
+{"@type":"SoftwareApplication","@id":"https://publiclocal.app/#app","name":"PublicLocal","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows, FreeBSD","softwareVersion":"0.7","license":"https://opensource.org/licenses/MIT","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"url":"https://publiclocal.app/","downloadUrl":"https://github.com/sevenoways/publiclocal/releases/latest","softwareHelp":"https://publiclocal.app/docs","description":"Open-source reverse tunnel that gives a local port a public HTTPS URL. Free hosted server or self-hosted on your own domain. An alternative to ngrok.","featureList":["Public HTTPS URL for localhost in one command","Free server, no account needed","Self-host on your own domain","Automatic Let's Encrypt certificates","TCP tunnels (self-hosted)","WebSockets","MCP server for AI coding assistants"],"author":{"@id":"https://publiclocal.app/#org"}},
+{"@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"What is PublicLocal?","acceptedAnswer":{"@type":"Answer","text":"PublicLocal is an open-source reverse tunnel. It makes a web server running on your own computer reachable from the internet at a public HTTPS address, so you can test webhooks, show work in progress or open your dev server on a phone. One command gives you a link on the free server at publiclocal.app, or you can run the same software on your own server and domain."}},
+{"@type":"Question","name":"Is PublicLocal a free alternative to ngrok?","acceptedAnswer":{"@type":"Answer","text":"Yes. PublicLocal is MIT-licensed and free to use. The hosted server at publiclocal.app needs no account; links last 24 hours, or 7 days if you sign in with GitHub. Unlike ngrok, both the client and the server are open source, so you can also self-host it on your own domain with no limits."}},
+{"@type":"Question","name":"How do I expose localhost to the internet with PublicLocal?","acceptedAnswer":{"@type":"Answer","text":"Install PublicLocal, then run `publiclocal http 3000` (replace 3000 with your app's port). It prints a public https:// link that forwards to your local app. Press Ctrl+C to stop sharing."}},
+{"@type":"Question","name":"Does PublicLocal work behind NAT, firewalls or CGNAT?","acceptedAnswer":{"@type":"Answer","text":"Yes. The client makes a single outbound encrypted connection to the server, and all traffic flows back through it. Your computer never accepts incoming connections, so no port forwarding or router changes are needed."}},
+{"@type":"Question","name":"Can I use my own domain with PublicLocal?","acceptedAnswer":{"@type":"Answer","text":"Yes, by running your own server. Point a domain and its wildcard DNS record at any small VPS, run `publiclocal server --domain yourdomain.com`, and your tunnels get addresses like https://myapp.yourdomain.com with automatic Let's Encrypt certificates."}},
+{"@type":"Question","name":"Does PublicLocal support TCP, SSH or databases?","acceptedAnswer":{"@type":"Answer","text":"TCP tunnels (SSH, Postgres, MySQL, Redis, game servers) are supported on self-hosted servers with `publiclocal tcp 22`. The free public server is HTTP and HTTPS only."}},
+{"@type":"Question","name":"Is it safe to share links from the free server?","acceptedAnswer":{"@type":"Answer","text":"Traffic between your computer and the server is encrypted, and visitors reach your link over HTTPS. Because anyone can create a link, browsers first see a short notice saying the page is a temporary developer tunnel, and links use random names so they cannot imitate brands. Webhooks, APIs and curl skip the notice."}},
+{"@type":"Question","name":"Can AI coding assistants use PublicLocal?","acceptedAnswer":{"@type":"Answer","text":"Yes. PublicLocal includes an MCP server. After `claude mcp add publiclocal -- publiclocal mcp` (or the equivalent in Cursor, VS Code, Codex CLI or Gemini CLI) you can ask the assistant to share your dev server and it opens the tunnel and gives you the link."}}
+]}
+]}
 </script>
 </head>
 <body>
 
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="/">
+    <a class="brand" href="/" aria-label="PublicLocal home">
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2557e8"/><path d="M9 20a7 7 0 0 1 14 0" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="16" cy="20" r="2.5" fill="#fff"/></svg>
       PublicLocal
     </a>
-    <nav>
-      <a href="#install">Install</a>
-      <a class="hide-sm" href="#ai">AI / MCP</a>
-      <a class="hide-sm" href="#self-host">Self-host</a>
-      <a class="hide-sm" href="/terms">Fair use</a>
+    <button class="menu-btn" id="menu" aria-label="Menu" aria-expanded="false" aria-controls="nav">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+    </button>
+    <nav class="nav" id="nav" aria-label="Main">
+      <a href="/docs">Docs</a>
+      <a href="#self-host">Self-host</a>
+      <a href="#ai">AI assistants</a>
+      <a href="#faq">FAQ</a>
       <a href="https://github.com/sevenoways/publiclocal">GitHub</a>
+      <a class="cta" href="#install">Get started</a>
     </nav>
   </div>
 </header>
 
 <main>
   <div class="hero wrap">
-    <span class="pill">● Free · Open source · No sign-up</span>
-    <h1>Make localhost public</h1>
-    <p class="lead">Share the app running on your computer with a public HTTPS link, in one command. Test webhooks, show a client, or try your site on your phone.</p>
-    <div class="term" role="img" aria-label="Terminal: publiclocal http 3000 prints a public HTTPS URL">
-<span class="dim">$</span> publiclocal http 3000
-Forwarding <span class="url">https://k7xq2m.publiclocal.app</span> -&gt; 127.0.0.1:3000
+    <span class="pill">Free · Open source · No sign-up</span>
+    <h1>Make <em>localhost</em> public<br>in one command</h1>
+    <p class="lead">PublicLocal gives the app running on your computer a public HTTPS link. Test webhooks, show a client, or open your site on your phone. Use the free server, or run your own.</p>
+    <div class="term" role="img" aria-label="Terminal showing: publiclocal http 3000, then Forwarding https://k7xq2m.publiclocal.app to localhost:3000">
+      <div class="term-bar"><i></i><i></i><i></i><span>terminal</span></div>
+<pre><span class="dim">$</span> <span id="typed">publiclocal http 3000</span><span class="cursor" id="cur"></span>
+<span id="out"><span class="dim">Forwarding</span> <span class="url">https://k7xq2m.publiclocal.app</span> → localhost:3000
+<span class="dim">Link expires in 24 hours · run `publiclocal login` for 7-day links</span></span></pre>
     </div>
     <div class="cta">
-      <a class="btn primary" href="#install">Get started</a>
-      <a class="btn" href="https://github.com/sevenoways/publiclocal">View on GitHub</a>
+      <a class="btn primary" href="#install"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Install in 10 seconds</a>
+      <a class="btn" href="https://github.com/sevenoways/publiclocal"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A12 12 0 0 0 8.2 23.9c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.7.3 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>View on GitHub</a>
     </div>
+    <div class="trust"><span>MIT licensed</span><span>No account needed</span><span>Works behind NAT</span><span>Self-hostable</span></div>
   </div>
 
-  <section id="install">
-    <div class="wrap">
-      <h2>Install</h2>
-      <p class="sub">One small binary, no dependencies. Then run <code>publiclocal http &lt;port&gt;</code>.</p>
-      <div class="install">
-        <div class="row"><b>Linux / macOS</b><code id="c1">curl -fsSL https://publiclocal.app/install.sh | sh</code><button class="copy" data-copy="c1">Copy</button></div>
-        <div class="row"><b>Go</b><code id="c2">go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest</code><button class="copy" data-copy="c2">Copy</button></div>
-        <div class="row"><b>Docker</b><code id="c3">docker run --rm --network host ghcr.io/sevenoways/publiclocal http 3000</code><button class="copy" data-copy="c3">Copy</button></div>
-        <div class="row"><b>Windows</b><code id="c4">irm https://publiclocal.app/install.ps1 | iex</code><button class="copy" data-copy="c4">Copy</button></div>
+  <section id="what">
+    <div class="wrap center">
+      <p class="eyebrow">What it is</p>
+      <h2>A reverse tunnel you can use for free or run yourself</h2>
+      <p class="sub"><strong>PublicLocal</strong> is an open-source reverse tunnel. It connects your computer to a public server over one encrypted connection and gives you an <code>https://</code> address that forwards to a local port. It does what ngrok does, with two differences: the whole thing is open source, and you can run the server on your own domain.</p>
+      <div class="grid">
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 1 16 0 8 8 0 0 1-16 0zm0 0h16M12 4c2.5 2.5 2.5 13.5 0 16M12 4c-2.5 2.5-2.5 13.5 0 16"/></svg></div><h3>Webhooks</h3><p>Point Stripe, GitHub, Slack or Twilio at your laptop and watch callbacks arrive while you debug.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8m-4-4v4"/></svg></div><h3>Demos</h3><p>Send a client or teammate a link to the work in progress. Nothing to deploy, nothing to clean up.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></div><h3>Mobile testing</h3><p>Open your local site on a real phone over HTTPS, so service workers, cameras and geolocation work.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h2a5 5 0 0 1 0 10h-2M9 7H7a5 5 0 0 0 0 10h2m-1-5h8"/></svg></div><h3>OAuth callbacks</h3><p>Use a real HTTPS redirect URL while building sign-in with Google, GitHub or Auth0.</p></div>
       </div>
     </div>
   </section>
 
-  <section>
+  <section id="install" class="alt">
+    <div class="wrap center">
+      <p class="eyebrow">Install</p>
+      <h2>One small binary, no dependencies</h2>
+      <p class="sub">Then run <code>publiclocal http &lt;port&gt;</code>. Works on Linux, macOS, Windows and FreeBSD.</p>
+      <div class="tabs">
+        <input type="radio" name="tab" id="t1" checked><input type="radio" name="tab" id="t2"><input type="radio" name="tab" id="t3"><input type="radio" name="tab" id="t4">
+        <div class="tab-labels"><label for="t1">Linux / macOS</label><label for="t2">Windows</label><label for="t3">Docker</label><label for="t4">Go</label></div>
+        <div class="tab-panel p1"><div class="row"><code id="c1">curl -fsSL https://publiclocal.app/install.sh | sh</code><button class="copy" data-copy="c1">Copy</button></div><p>Downloads the right build, verifies its checksum and installs to <code>/usr/local/bin</code>.</p></div>
+        <div class="tab-panel p2"><div class="row"><code id="c2">irm https://publiclocal.app/install.ps1 | iex</code><button class="copy" data-copy="c2">Copy</button></div><p>Run in PowerShell. Installs to your user profile and adds it to PATH; no admin rights needed.</p></div>
+        <div class="tab-panel p3"><div class="row"><code id="c3">docker run --rm --network host ghcr.io/sevenoways/publiclocal http 3000</code><button class="copy" data-copy="c3">Copy</button></div><p>Images for amd64 and arm64 on GitHub Container Registry.</p></div>
+        <div class="tab-panel p4"><div class="row"><code id="c4">go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest</code><button class="copy" data-copy="c4">Copy</button></div><p>Builds from source with Go 1.27 or newer.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap center">
+      <p class="eyebrow">How it works</p>
+      <h2>Your computer never accepts incoming connections</h2>
+      <p class="sub">That is why it works behind NAT, hotel Wi-Fi and corporate firewalls without any router changes.</p>
+      <svg class="diagram" viewBox="0 0 820 170" role="img" aria-label="Diagram: a visitor's browser sends a request to the PublicLocal server, which forwards it over one encrypted connection to the PublicLocal client on your computer, which passes it to localhost:3000">
+        <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="currentColor"/></marker></defs>
+        <g font-family="system-ui, sans-serif" font-size="14" fill="currentColor">
+          <rect x="10" y="50" width="150" height="70" rx="12" fill="var(--surface)" stroke="var(--line)"/><text x="85" y="80" text-anchor="middle" font-weight="600">Visitor</text><text x="85" y="100" text-anchor="middle" fill="var(--muted)" font-size="12.5">browser, webhook, curl</text>
+          <rect x="250" y="50" width="170" height="70" rx="12" fill="var(--accent)" stroke="var(--accent)"/><text x="335" y="80" text-anchor="middle" font-weight="700" fill="var(--accent-fg)">PublicLocal server</text><text x="335" y="100" text-anchor="middle" fill="var(--accent-fg)" font-size="12.5" opacity=".85">k7xq2m.publiclocal.app</text>
+          <rect x="510" y="50" width="150" height="70" rx="12" fill="var(--surface)" stroke="var(--line)"/><text x="585" y="80" text-anchor="middle" font-weight="600">publiclocal client</text><text x="585" y="100" text-anchor="middle" fill="var(--muted)" font-size="12.5">on your computer</text>
+          <rect x="700" y="50" width="110" height="70" rx="12" fill="var(--surface)" stroke="var(--line)"/><text x="755" y="80" text-anchor="middle" font-weight="600">your app</text><text x="755" y="100" text-anchor="middle" fill="var(--muted)" font-size="12.5">localhost:3000</text>
+          <line x1="162" y1="85" x2="248" y2="85" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/><text x="205" y="72" text-anchor="middle" fill="var(--muted)" font-size="12">HTTPS</text>
+          <line x1="508" y1="85" x2="422" y2="85" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/><text x="465" y="72" text-anchor="middle" fill="var(--muted)" font-size="12">TLS tunnel</text>
+          <line x1="662" y1="85" x2="698" y2="85" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
+          <text x="465" y="150" text-anchor="middle" fill="var(--muted)" font-size="13">The client dials out; requests travel back down the same connection.</text>
+        </g>
+      </svg>
+      <ol class="steps" style="max-width:820px;margin:0 auto;text-align:left">
+        <li><strong>The client dials the server</strong><span>One encrypted connection, kept open and multiplexed. Nothing listens on your machine.</span></li>
+        <li><strong>You get a random HTTPS address</strong><span>With a valid certificate, ready to share. It stays the same if your connection drops.</span></li>
+        <li><strong>Requests flow down the tunnel</strong><span>Each visitor request is forwarded to your local port. WebSockets, streaming and large uploads work.</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="self-host" class="alt">
     <div class="wrap">
-      <h2>What people use it for</h2>
-      <p class="sub">Anything where something on the internet needs to reach your laptop.</p>
-      <div class="grid">
-        <div class="card"><h3>Webhooks</h3><p>Point Stripe, GitHub, Slack or Twilio at your local server and debug callbacks as they arrive.</p></div>
-        <div class="card"><h3>Demos</h3><p>Send a client or teammate a link to the work in progress, without deploying anything.</p></div>
-        <div class="card"><h3>Mobile testing</h3><p>Open your local site on a real phone over HTTPS, cameras and service workers included.</p></div>
-        <div class="card"><h3>OAuth callbacks</h3><p>Use a real HTTPS redirect URL while developing sign-in with Google, GitHub or Auth0.</p></div>
+      <div class="center"><p class="eyebrow">Two ways to use it</p><h2>Start on the free server, move to your own when you want</h2><p class="sub">Same binary, same commands. Your own server adds your domain, fixed names, TCP and no limits.</p></div>
+      <div class="two">
+        <div class="plan">
+          <h3>Free public server</h3>
+          <p class="for">For quick tests, demos and webhooks.</p>
+          <ul>
+            <li>No account. Links last <strong>24 hours</strong>, or <strong>7 days</strong> with GitHub sign-in, extendable</li>
+            <li>Random names like <code>k7xq2m.publiclocal.app</code></li>
+            <li>HTTP and HTTPS; visitors in a browser see a short notice first</li>
+            <li>Fair-use limits on requests and traffic</li>
+          </ul>
+<pre class="block"><span class="dim">$</span> publiclocal http 3000
+<span class="dim">$</span> publiclocal login      <span class="dim"># 7-day links</span>
+<span class="dim">$</span> publiclocal extend k7xq2m</pre>
+        </div>
+        <div class="plan hi">
+          <h3>Your own server</h3>
+          <p class="for">For your domain, permanent links, TCP and teams. Any $5 VPS.</p>
+          <ul>
+            <li>Addresses like <code>https://myapp.example.com</code>, no expiry</li>
+            <li>Automatic Let's Encrypt certificates, or one wildcard certificate</li>
+            <li>TCP tunnels: SSH, Postgres, MySQL, Redis, game servers</li>
+            <li>Token authentication, your own limits</li>
+          </ul>
+<pre class="block"><span class="dim"># server (DNS: example.com and *.example.com)</span>
+publiclocal server --domain example.com --tokens "$(openssl rand -hex 24)"
+<span class="dim"># laptop</span>
+publiclocal http --server example.com --subdomain myapp 3000
+<span class="url">Forwarding https://myapp.example.com → localhost:3000</span></pre>
+          <p style="margin:14px 0 0"><a href="/docs#self-host">Self-hosting guide →</a></p>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="ai">
-    <div class="wrap">
-      <h2>Works with your AI assistant</h2>
-      <p class="sub">PublicLocal includes an MCP server. Ask <em>"share my dev server on port 3000"</em> and your assistant opens the tunnel and hands you the link.</p>
-      <div class="install">
-        <div class="row"><b>Claude Code</b><code id="m1">claude mcp add publiclocal -- publiclocal mcp</code><button class="copy" data-copy="m1">Copy</button></div>
-        <div class="row"><b>Codex CLI</b><code id="m2">codex mcp add publiclocal -- publiclocal mcp</code><button class="copy" data-copy="m2">Copy</button></div>
-        <div class="row"><b>Claude Desktop, Cursor, VS Code, Gemini</b><code>{"command": "publiclocal", "args": ["mcp"]}</code><a class="copy" href="https://github.com/sevenoways/publiclocal/blob/main/docs/mcp.md">Setup</a></div>
+    <div class="wrap center">
+      <p class="eyebrow">AI assistants</p>
+      <h2>Works with Claude Code, Cursor, VS Code, Codex and Gemini CLI</h2>
+      <p class="sub">PublicLocal includes an MCP server. Ask your assistant to "share my dev server on port 3000" and it opens the tunnel and hands you the link. Tunnels close when the session ends, and <code>--allow-ports</code> limits what it may expose.</p>
+      <div class="tabs" style="max-width:720px">
+        <div class="tab-panel" style="display:block">
+          <div class="row"><code id="m1">claude mcp add publiclocal -- publiclocal mcp</code><button class="copy" data-copy="m1">Copy</button></div>
+          <div class="row" style="margin-top:10px"><code id="m2">codex mcp add publiclocal -- publiclocal mcp</code><button class="copy" data-copy="m2">Copy</button></div>
+          <p>Claude Desktop, Cursor, VS Code and Gemini CLI use a JSON config: <code>{"command": "publiclocal", "args": ["mcp"]}</code>. <a href="/docs#mcp">Setup for each →</a></p>
+        </div>
       </div>
     </div>
   </section>
 
-  <section>
+  <section id="compare" class="alt">
     <div class="wrap">
-      <h2>How it works</h2>
-      <p class="sub">Your computer never accepts incoming connections, so it works behind NAT, Wi-Fi and firewalls.</p>
-      <ol class="steps">
-        <li>The client opens one encrypted connection out to the PublicLocal server.</li>
-        <li>The server gives you a random HTTPS address with a valid certificate.</li>
-        <li>Requests to that address travel down the connection to your local port. WebSockets and streaming work too.</li>
-      </ol>
-    </div>
-  </section>
-
-  <section id="login">
-    <div class="wrap">
-      <h2>Keep links for a week</h2>
-      <p class="sub">Links last 24 hours. Sign in with GitHub and they last 7 days, and you can extend them again before they run out.</p>
-<pre class="block"><span style="color:#8592a8">$</span> publiclocal login
-<span style="color:#8592a8">$</span> publiclocal http 3000
-Forwarding <span style="color:#7ee2a8">https://k7xq2m.publiclocal.app</span> -&gt; localhost:3000
-Link expires in 7 days
-<span style="color:#8592a8">$</span> publiclocal extend k7xq2m
-<span style="color:#8592a8">$</span> publiclocal links</pre>
-    </div>
-  </section>
-
-  <section id="free">
-    <div class="wrap">
-      <div class="notice">
-        <h3>The free server is for temporary use</h3>
-        <ul>
-          <li>Links use random names and last 24 hours, keeping the same address if your connection drops. <a href="#login">Sign in with GitHub</a> for 7-day links you can extend.</li>
-          <li>Visitors in a browser see a short notice before your app. Webhooks, APIs and <code>curl</code> skip it, and you can skip it with the header <code>PublicLocal-Skip-Warning: 1</code>.</li>
-          <li>HTTP only, with fair-use limits on requests and traffic. See <a href="/terms">fair use</a>.</li>
-          <li>Need a permanent address, your own domain, or TCP (SSH, databases)? Run your own server.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section id="self-host">
-    <div class="wrap">
-      <h2>Run your own server</h2>
-      <p class="sub">Your domain, no limits, TCP tunnels, automatic HTTPS. Any $5 VPS works.</p>
-<pre class="block"><span style="color:#8592a8"># on the server (DNS: example.com and *.example.com point here)</span>
-publiclocal server --domain example.com --tokens "$(openssl rand -hex 24)"
-
-<span style="color:#8592a8"># on your laptop</span>
-PUBLICLOCAL_SERVER=example.com PUBLICLOCAL_TOKEN=... publiclocal http --subdomain myapp 3000
-<span style="color:#7ee2a8">Forwarding https://myapp.example.com -&gt; 127.0.0.1:3000</span></pre>
-      <p style="margin-top:16px"><a href="https://github.com/sevenoways/publiclocal#run-your-own-server">Full setup guide on GitHub →</a></p>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <h2>Compared with alternatives</h2>
-      <p class="sub">PublicLocal is for people who want an ngrok-style link today and the option to own the whole thing tomorrow.</p>
+      <div class="center"><p class="eyebrow">Compared</p><h2>PublicLocal vs ngrok, Cloudflare Tunnel and frp</h2><p class="sub">PublicLocal is for people who want an ngrok-style link today and the option to own the whole thing tomorrow. <a href="/ngrok-alternative">Full comparison with ngrok →</a></p></div>
       <div class="table-wrap">
       <table>
-        <tr><th></th><th>PublicLocal</th><th>ngrok</th><th>Cloudflare Tunnel</th><th>frp</th></tr>
-        <tr><td>Open source</td><td>MIT</td><td>No</td><td>Client only</td><td>Apache-2.0</td></tr>
-        <tr><td>Try without an account</td><td>Yes</td><td>No</td><td>Quick tunnels</td><td>No public server</td></tr>
-        <tr><td>Self-host the server</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td></tr>
-        <tr><td>Your own domain, free</td><td>Yes (self-hosted)</td><td>Paid plans</td><td>Domain on Cloudflare</td><td>Yes</td></tr>
-        <tr><td>Automatic HTTPS</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Manual</td></tr>
+        <thead><tr><th></th><th>PublicLocal</th><th>ngrok</th><th>Cloudflare Tunnel</th><th>frp</th></tr></thead>
+        <tbody>
+        <tr><td>Open source</td><td class="y">MIT, client and server</td><td class="n">No</td><td class="n">Client only</td><td class="y">Apache-2.0</td></tr>
+        <tr><td>Try without an account</td><td class="y">Yes</td><td class="n">No</td><td class="n">Quick tunnels only</td><td class="n">No public server</td></tr>
+        <tr><td>Self-host the server</td><td class="y">Yes</td><td class="n">No</td><td class="n">No</td><td class="y">Yes</td></tr>
+        <tr><td>Your own domain, free</td><td class="y">Yes, self-hosted</td><td class="n">Paid plans</td><td class="n">Domain must be on Cloudflare</td><td class="y">Yes</td></tr>
+        <tr><td>Automatic HTTPS</td><td class="y">Yes</td><td class="y">Yes</td><td class="y">Yes</td><td class="n">Manual</td></tr>
+        <tr><td>Raw TCP</td><td class="y">Self-hosted</td><td class="y">Yes</td><td class="n">Client needs cloudflared</td><td class="y">Yes</td></tr>
+        <tr><td>MCP for AI assistants</td><td class="y">Built in</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
+        <tr><td>Setup</td><td>one flag per side</td><td>account + token</td><td>account + DNS</td><td>config files</td></tr>
+        </tbody>
       </table>
       </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="center"><p class="eyebrow">FAQ</p><h2>Questions people ask</h2></div>
+      <div class="faq">
+        <details><summary>What is PublicLocal?</summary><p>PublicLocal is an open-source reverse tunnel. It makes a web server running on your own computer reachable from the internet at a public HTTPS address, so you can test webhooks, show work in progress or open your dev server on a phone. One command gives you a link on the free server at publiclocal.app, or you can run the same software on your own server and domain.</p></details>
+        <details><summary>Is PublicLocal a free alternative to ngrok?</summary><p>Yes. It is MIT-licensed and free to use. The hosted server needs no account; links last 24 hours, or 7 days if you sign in with GitHub. Unlike ngrok, both the client and the server are open source, so you can also self-host it on your own domain with no limits.</p></details>
+        <details><summary>How do I expose localhost to the internet?</summary><p>Install PublicLocal, then run <code>publiclocal http 3000</code> (replace 3000 with your app's port). It prints a public <code>https://</code> link that forwards to your local app. Press Ctrl+C to stop sharing.</p></details>
+        <details><summary>Does it work behind NAT, firewalls or CGNAT?</summary><p>Yes. The client makes a single outbound encrypted connection to the server, and all traffic flows back through it. Your computer never accepts incoming connections, so no port forwarding or router changes are needed.</p></details>
+        <details><summary>Can I use my own domain?</summary><p>Yes, by running your own server. Point a domain and its wildcard DNS record at any small VPS, run <code>publiclocal server --domain yourdomain.com</code>, and your tunnels get addresses like <code>https://myapp.yourdomain.com</code> with automatic Let's Encrypt certificates.</p></details>
+        <details><summary>Does it support TCP, SSH or databases?</summary><p>TCP tunnels (SSH, Postgres, MySQL, Redis, game servers) are supported on self-hosted servers with <code>publiclocal tcp 22</code>. The free public server is HTTP and HTTPS only.</p></details>
+        <details><summary>Is it safe to share links from the free server?</summary><p>Traffic between your computer and the server is encrypted, and visitors reach your link over HTTPS. Because anyone can create a link, browsers first see a short notice saying the page is a temporary developer tunnel, and links use random names so they cannot imitate brands. Webhooks, APIs and <code>curl</code> skip the notice. Report misuse to <a href="mailto:abuse@publiclocal.app">abuse@publiclocal.app</a>.</p></details>
+        <details><summary>Can AI coding assistants use it?</summary><p>Yes. PublicLocal includes an MCP server. After <code>claude mcp add publiclocal -- publiclocal mcp</code> (or the equivalent in Cursor, VS Code, Codex CLI or Gemini CLI) you can ask the assistant to share your dev server and it opens the tunnel and gives you the link.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="final alt">
+    <div class="wrap">
+      <h2>Your localhost, public in ten seconds</h2>
+      <p class="sub" style="margin:0 auto 24px">No account, no card, no vendor. Open source and yours to run.</p>
+      <div class="cta"><a class="btn primary" href="#install">Install PublicLocal</a><a class="btn" href="/docs">Read the docs</a></div>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span>PublicLocal is free and open source (MIT). Not affiliated with the sites people share through it.</span>
-    <span><a href="/terms">Fair use</a> · <a href="mailto:abuse@publiclocal.app">Report abuse</a> · <a href="https://github.com/sevenoways/publiclocal">GitHub</a></span>
+    <div class="cols">
+      <div>
+        <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2557e8"/><path d="M9 20a7 7 0 0 1 14 0" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="16" cy="20" r="2.5" fill="#fff"/></svg>PublicLocal</a>
+        <p style="margin:12px 0 0;max-width:320px">Open-source reverse tunnel: a public HTTPS link for localhost, free or on your own server. A project by Sevenoways Innovations, Ireland.</p>
+      </div>
+      <div><h4>Product</h4><ul><li><a href="/docs">Documentation</a></li><li><a href="/ngrok-alternative">ngrok alternative</a></li><li><a href="https://github.com/sevenoways/publiclocal/releases/latest">Downloads</a></li><li><a href="/docs#mcp">MCP setup</a></li></ul></div>
+      <div><h4>Project</h4><ul><li><a href="https://github.com/sevenoways/publiclocal">GitHub</a></li><li><a href="https://github.com/sevenoways/publiclocal/issues">Issues</a></li><li><a href="https://github.com/sevenoways/publiclocal/blob/main/CONTRIBUTING.md">Contributing</a></li><li><a href="https://github.com/sevenoways/publiclocal/blob/main/LICENSE">MIT licence</a></li></ul></div>
+      <div><h4>Trust</h4><ul><li><a href="/terms">Fair use</a></li><li><a href="/terms#privacy">Privacy</a></li><li><a href="mailto:abuse@publiclocal.app">Report abuse</a></li><li><a href="https://github.com/sevenoways/publiclocal/security/advisories/new">Security</a></li></ul></div>
+    </div>
+    <div class="fine"><span>© 2026 Sevenoways Innovations. Not affiliated with the sites people share through PublicLocal.</span><span>Last updated 30 October 2026</span></div>
   </div>
 </footer>
 
 <script>
-  document.querySelectorAll("button.copy").forEach(function (b) {
-    b.addEventListener("click", function () {
-      var t = document.getElementById(b.dataset.copy).textContent;
-      navigator.clipboard.writeText(t).then(function () {
-        b.textContent = "Copied";
-        setTimeout(function () { b.textContent = "Copy"; }, 1500);
+  (function () {
+    var m = document.getElementById("menu"), n = document.getElementById("nav");
+    m.addEventListener("click", function () { var o = n.classList.toggle("open"); m.setAttribute("aria-expanded", o); });
+    n.addEventListener("click", function (e) { if (e.target.tagName === "A") { n.classList.remove("open"); m.setAttribute("aria-expanded", "false"); } });
+    document.querySelectorAll("button.copy").forEach(function (b) {
+      b.addEventListener("click", function () {
+        navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent).then(function () {
+          b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1500);
+        });
       });
     });
-  });
+    // Type the hero command once, then show the result.
+    var t = document.getElementById("typed"), out = document.getElementById("out"), cur = document.getElementById("cur");
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { cur.remove(); return; }
+    var text = t.textContent, i = 0; t.textContent = ""; out.style.visibility = "hidden";
+    (function tick() {
+      if (i <= text.length) { t.textContent = text.slice(0, i++); setTimeout(tick, 45); }
+      else { setTimeout(function () { out.style.visibility = "visible"; cur.remove(); }, 500); }
+    })();
+  })();
 </script>
 </body>
 </html>

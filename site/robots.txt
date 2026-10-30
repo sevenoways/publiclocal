@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /.publiclocal/
+Disallow: /login
+Disallow: /auth/
+Disallow: /api/
+
+Sitemap: https://publiclocal.app/sitemap.xml

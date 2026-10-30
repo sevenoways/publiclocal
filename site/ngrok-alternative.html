@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PublicLocal vs ngrok: a free, open-source ngrok alternative</title>
+<meta name="description" content="Looking for an ngrok alternative? PublicLocal is open source (MIT), free without an account, and self-hostable on your own domain. Compare features, limits and pricing, and migrate in one command.">
+<link rel="canonical" href="https://publiclocal.app/ngrok-alternative">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PublicLocal vs ngrok: a free, open-source alternative">
+<meta property="og:description" content="Open source, free without an account, self-hostable on your own domain. Compare and migrate in one command.">
+<meta property="og:url" content="https://publiclocal.app/ngrok-alternative">
+<meta property="og:image" content="https://publiclocal.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<script src="https://sevenlytics.com/api/script.js?siteId=6fd9158ea898" defer></script>
+<script src="/analytics.js"></script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"Article","headline":"PublicLocal vs ngrok: a free, open-source ngrok alternative","description":"How PublicLocal compares with ngrok on licensing, pricing, custom domains, self-hosting and TCP, and how to switch.","url":"https://publiclocal.app/ngrok-alternative","datePublished":"2026-10-30","dateModified":"2026-10-30","author":{"@type":"Organization","name":"PublicLocal","url":"https://publiclocal.app/"}},
+{"@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Is there a free alternative to ngrok?","acceptedAnswer":{"@type":"Answer","text":"Yes. PublicLocal is a free, open-source alternative to ngrok. Run `publiclocal http 3000` to get a public HTTPS link with no account; links last 24 hours, or 7 days with GitHub sign-in. You can also self-host the server on your own domain with no limits."}},
+{"@type":"Question","name":"Can I self-host an ngrok alternative?","acceptedAnswer":{"@type":"Answer","text":"Yes. PublicLocal's server is open source. Point a domain and its wildcard DNS at a small VPS, run `publiclocal server --domain yourdomain.com`, and clients get addresses like https://myapp.yourdomain.com with automatic Let's Encrypt certificates, plus TCP tunnels."}},
+{"@type":"Question","name":"How do I switch from ngrok to PublicLocal?","acceptedAnswer":{"@type":"Answer","text":"Install PublicLocal and replace `ngrok http 3000` with `publiclocal http 3000`. For a fixed subdomain, self-host and use `--subdomain myapp`. For `ngrok tcp 22`, self-host and use `publiclocal tcp 22`."}}
+]}]}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2557e8"/><path d="M9 20a7 7 0 0 1 14 0" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="16" cy="20" r="2.5" fill="#fff"/></svg>PublicLocal</a>
+    <nav class="nav" aria-label="Main"><a href="/">Home</a><a href="/docs">Docs</a><a href="/terms">Fair use</a><a href="https://github.com/sevenoways/publiclocal">GitHub</a></nav>
+  </div>
+</header>
+
+<main class="wrap prose">
+  <h1>PublicLocal vs ngrok: a free, open-source alternative</h1>
+  <p class="lead">ngrok made "expose localhost" a one-liner, and it is a solid product. PublicLocal does the same job with two differences that matter to a lot of developers: it is fully open source, and you can run the server yourself. <span class="updated">Updated 30 October 2026</span></p>
+
+  <h2>Short version</h2>
+  <p><strong>Choose PublicLocal</strong> if you want a free public link without creating an account, an MIT-licensed tool you can read and change, or your own tunnel server on your own domain with no per-seat pricing.</p>
+  <p><strong>Choose ngrok</strong> if you need its managed extras: traffic inspection in a dashboard, OAuth and IP policies in front of tunnels, edge load balancing, SLAs, or a global network of entry points.</p>
+
+  <h2>Side by side</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th></th><th>PublicLocal</th><th>ngrok</th></tr></thead>
+    <tbody>
+    <tr><td>Licence</td><td class="y">MIT, client and server</td><td class="n">Proprietary (agent source is viewable, server is not)</td></tr>
+    <tr><td>Free use</td><td class="y">No account; 24-hour links, 7 days signed in</td><td>Account required; free tier with limits and an interstitial page</td></tr>
+    <tr><td>Random HTTPS subdomains</td><td class="y">Yes</td><td class="y">Yes</td></tr>
+    <tr><td>Fixed subdomain / custom domain</td><td class="y">Free on your own server</td><td class="n">Paid plans</td></tr>
+    <tr><td>Self-host the server</td><td class="y">Yes, one binary, any VPS</td><td class="n">No</td></tr>
+    <tr><td>TCP tunnels (SSH, databases)</td><td class="y">On your own server</td><td class="y">Yes (paid for fixed addresses)</td></tr>
+    <tr><td>Automatic certificates</td><td class="y">Let's Encrypt, or one wildcard via Cloudflare DNS</td><td class="y">Managed</td></tr>
+    <tr><td>WebSockets, streaming</td><td class="y">Yes</td><td class="y">Yes</td></tr>
+    <tr><td>Traffic inspector</td><td class="n">Not yet</td><td class="y">Yes</td></tr>
+    <tr><td>Auth in front of tunnels</td><td class="n">Not yet (tokens protect who may open tunnels)</td><td class="y">OAuth, basic auth, IP rules</td></tr>
+    <tr><td>MCP for AI assistants</td><td class="y">Built in</td><td class="n">No</td></tr>
+    <tr><td>Where traffic goes</td><td>publiclocal.app (London), or your server</td><td>ngrok's global edge</td></tr>
+    <tr><td>Cost</td><td class="y">Free; self-hosting costs you a VPS (≈$5/month)</td><td>Free tier; paid plans per user</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Switching from ngrok</h2>
+  <p>The commands map one to one. Install PublicLocal, then:</p>
+<pre class="block"><span class="dim"># ngrok</span>                      <span class="dim"># PublicLocal</span>
+ngrok http 3000              publiclocal http 3000
+ngrok http 3000 --domain x   publiclocal http --subdomain x 3000   <span class="dim"># own server</span>
+ngrok tcp 22                 publiclocal tcp 22                    <span class="dim"># own server</span>
+ngrok config add-authtoken   publiclocal login                     <span class="dim"># optional, for 7-day links</span></pre>
+  <p>Things to know when you switch:</p>
+  <ul>
+    <li><strong>The browser notice.</strong> Like ngrok's free tier, the free PublicLocal server shows visitors a short interstitial the first time they open a link in a browser. Webhooks, APIs and <code>curl</code> never see it, and the header <code>PublicLocal-Skip-Warning: 1</code> skips it. Your own server has no notice.</li>
+    <li><strong>Link lifetime.</strong> Free links last 24 hours (7 days signed in, extendable) and keep their address across reconnects and restarts. Your own server has no expiry.</li>
+    <li><strong>Host header.</strong> PublicLocal passes the public hostname through unchanged, the same as ngrok, so framework host allow-lists need the tunnel name added.</li>
+    <li><strong>Regions.</strong> The free server is in London. If most of your visitors are elsewhere, self-host near them.</li>
+  </ul>
+
+  <h2>Self-hosting in two commands</h2>
+  <p>This is the part ngrok cannot offer. With a domain and a small VPS:</p>
+<pre class="block"><span class="dim"># DNS: tunnel.example.com and *.tunnel.example.com -> your server</span>
+publiclocal server --domain tunnel.example.com --tokens "$(openssl rand -hex 24)"
+
+<span class="dim"># on your laptop</span>
+PUBLICLOCAL_SERVER=tunnel.example.com PUBLICLOCAL_TOKEN=... publiclocal http --subdomain myapp 3000
+<span class="url">Forwarding https://myapp.tunnel.example.com -> localhost:3000</span></pre>
+  <p>Certificates, reconnects and WebSockets are handled for you. The <a href="/docs#self-host">docs</a> cover the flags; the <a href="https://github.com/sevenoways/publiclocal/blob/main/docs/public-instance.md">public-instance guide</a> covers running a server for other people safely.</p>
+
+  <h2>Other alternatives, honestly</h2>
+  <p><strong>Cloudflare Tunnel (cloudflared)</strong> is free and robust, but your domain has to be on Cloudflare and traffic runs through their network; the server side is not open source. <strong>frp</strong> is open source and very capable (UDP, P2P, dashboards), with more configuration to write and no automatic HTTPS. <strong>bore</strong> is tiny and open source, TCP only, no HTTPS or subdomains. <strong>localtunnel</strong> is open source but its free server is often overloaded. PublicLocal sits in the middle: ngrok-style HTTPS links and subdomains, open source, one binary, and self-hostable.</p>
+
+  <h2>Frequently asked</h2>
+  <div class="faq">
+    <details open><summary>Is there a free alternative to ngrok?</summary><p>Yes. PublicLocal is a free, open-source alternative. Run <code>publiclocal http 3000</code> to get a public HTTPS link with no account; links last 24 hours, or 7 days with GitHub sign-in. You can also self-host the server on your own domain with no limits.</p></details>
+    <details><summary>Can I self-host an ngrok alternative?</summary><p>Yes. PublicLocal's server is open source. Point a domain and its wildcard DNS at a small VPS, run <code>publiclocal server --domain yourdomain.com</code>, and clients get addresses like <code>https://myapp.yourdomain.com</code> with automatic Let's Encrypt certificates, plus TCP tunnels.</p></details>
+    <details><summary>How do I switch from ngrok to PublicLocal?</summary><p>Install PublicLocal and replace <code>ngrok http 3000</code> with <code>publiclocal http 3000</code>. For a fixed subdomain, self-host and use <code>--subdomain myapp</code>. For <code>ngrok tcp 22</code>, self-host and use <code>publiclocal tcp 22</code>.</p></details>
+  </div>
+
+  <div class="cta" style="justify-content:flex-start;margin:28px 0 64px"><a class="btn primary" href="/#install">Install PublicLocal</a><a class="btn" href="/docs">Read the docs</a></div>
+</main>
+
+<footer>
+  <div class="wrap"><div class="fine"><span>© 2026 Sevenoways Innovations · ngrok is a trademark of ngrok, Inc.; PublicLocal is not affiliated with it. · <a href="/">Home</a> · <a href="/terms">Fair use</a></span><span><a href="https://github.com/sevenoways/publiclocal">GitHub</a></span></div></div>
+</footer>
+</body>
+</html>
