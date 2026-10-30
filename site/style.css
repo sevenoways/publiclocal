@@ -31,15 +31,15 @@ h1, h2, h3 { line-height: 1.15; letter-spacing: -.015em; margin: 0; }
 .nav { display: flex; align-items: center; gap: 4px; }
 .nav a { color: var(--muted); text-decoration: none; font-size: 15px; padding: 8px 12px; border-radius: 8px; }
 .nav a:hover { color: var(--fg); background: var(--surface-2); }
-.nav a.cta { color: var(--accent-fg); background: var(--accent); font-weight: 600; margin-left: 6px; }
-.nav a.cta:hover { background: var(--accent-2); }
+.nav a.go { color: var(--accent-fg); background: var(--accent); font-weight: 600; margin-left: 6px; }
+.nav a.go:hover { background: var(--accent-2); color: var(--accent-fg); }
 .menu-btn { display: none; }
 @media (max-width: 760px) {
   .menu-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); cursor: pointer; }
   .nav { display: none; position: absolute; left: 0; right: 0; top: 64px; flex-direction: column; align-items: stretch; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 20px 16px; box-shadow: var(--shadow); }
   .nav.open { display: flex; }
   .nav a { padding: 12px 10px; font-size: 16px; }
-  .nav a.cta { margin: 8px 0 0; text-align: center; }
+  .nav a.go { margin: 8px 0 0; text-align: center; }
 }
 
 /* Buttons */
@@ -83,7 +83,8 @@ section .sub { color: var(--muted); margin: 0 0 30px; max-width: 720px; font-siz
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
 .grid > *, .two > *, .steps > li, .tab-panel .row > * { min-width: 0; }
 pre { max-width: 100%; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; transition: transform .15s ease, box-shadow .15s ease; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; text-align: left; transition: transform .15s ease, box-shadow .15s ease; }
+#details .grid { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
 .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .card .ico { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; margin-bottom: 14px; }
 .card .ico svg { width: 22px; height: 22px; }
