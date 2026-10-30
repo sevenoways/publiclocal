@@ -27,10 +27,14 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **Token authentication** and an encrypted (TLS) control channel
 - **Auto-reconnect** with backoff when the network drops
 - **Single static binary** for Linux, macOS, Windows and FreeBSD (amd64/arm64), plus a Docker image
-- **Live request feed** in your terminal: every request with method, path, status, time and visitor
+- **Live request feed** in your terminal, and a **local inspector** at `localhost:4040` with headers, bodies and **webhook replay**
+- **Share a folder or file** with `publiclocal share ./build`, no web server needed
 - **Password-protected links** (`--password`), enforced before anything reaches your app, free server included
-- **QR code in the terminal** (`--qr`) to open a link on your phone
-- **Link status pages and `/.publiclocal/status`**: visitors see when a link was live and how busy it was; scripts get JSON
+- **Self-destructing links**: `--max-visits 1` for one person, `--expires 30m` for a short while
+- **Several ports at once**: `publiclocal http 3000 8080`
+- **QR code in the terminal** (`--qr`) to open a link on your phone, `--note` to tell visitors what the link is, `--cors` for browser apps
+- **Link status pages**, a status badge (`/.publiclocal/badge.svg`) and `/.publiclocal/status` JSON: visitors see when a link was live and how busy it was
+- **Summary at exit**: requests, visitors, bytes and top paths
 - **Works with AI assistants** over MCP: Claude, Cursor, VS Code Copilot, Codex, Gemini CLI. Say "share my dev server" and get a link
 - **Public mode** for running an open instance safely: browser warning page, random names, expiring links, rate and traffic limits, ban tools
 - **Wildcard certificates** through Cloudflare DNS, so a busy server never hits Let's Encrypt limits
@@ -83,6 +87,9 @@ publiclocal http 3000                      # https://<random>.tunnel.example.com
 publiclocal http --subdomain myapp 8080    # https://myapp.tunnel.example.com
 publiclocal http --password s3cret 3000    # visitors must enter the password
 publiclocal http --qr 3000                 # QR code to scan with a phone
+publiclocal http 3000 8080                 # two links at once
+publiclocal http --max-visits 1 --expires 30m --note "for Anna" 3000
+publiclocal share ./build                  # serve a folder (or a file) from this computer
 publiclocal tcp 22                         # tcp://tunnel.example.com:1xxxx
 publiclocal tcp --remote-port 15432 5432   # fixed public port
 ```
@@ -167,4 +174,4 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). If
 
 ## License
 
-[MIT](LICENSE)
+Code: [MIT](LICENSE). The PublicLocal name and logo are trademarks; see [TRADEMARK.md](TRADEMARK.md). Contributions are accepted under the Developer Certificate of Origin (`git commit -s`).

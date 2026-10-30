@@ -145,6 +145,8 @@ type route struct {
 	proxy    *httputil.ReverseProxy
 	limiter  *bucket
 	password string // HTTP Basic auth password visitors must give; empty for none
+	note     string // shown to visitors on the warning page
+	maxVisit int    // only the first N visitor networks may use the link; 0 = no limit
 
 	requests atomic.Int64
 	bytes    atomic.Int64
@@ -153,6 +155,8 @@ type route struct {
 }
 
 const maxVisitorSet = 5000
+
+var errLocalDown = errors.New("local service unavailable")
 
 // record accounts for one served request and tells the client about it.
 func (rt *route) record(r *http.Request, status int, n int64, d time.Duration) {
@@ -427,8 +431,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "publiclocal: no tunnel here", http.StatusNotFound)
 		return
 	}
-	if r.URL.Path == statusPath {
+	switch r.URL.Path {
+	case statusPath:
 		s.linkStatus(w, sub)
+		return
+	case badgePath:
+		s.linkBadge(w, sub)
 		return
 	}
 	s.mu.RLock()
@@ -457,7 +465,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.needsWarning(r, host) {
-			s.serveWarning(w, r, host)
+			s.serveWarning(w, r, host, rt.note, rt.sess.account)
 			return
 		}
 	}
@@ -469,6 +477,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r.Header.Del("Authorization") // the app never sees the link password
+	}
+	if rt.maxVisit > 0 && !s.admitVisitor(sub, ipKey(r.RemoteAddr), rt.maxVisit) {
+		s.statusPage(w, r, statusPage{
+			Code: http.StatusGone, Host: host,
+			Title:   "This link has reached its visitor limit",
+			Message: "The person who shared it allowed only a set number of visitors, and those places are taken.",
+			Hint:    "Ask them for a new link.",
+		})
+		return
 	}
 	if rt.limiter != nil && !rt.limiter.allow() {
 		http.Error(w, "publiclocal: too many requests to this tunnel", http.StatusTooManyRequests)
@@ -631,7 +648,7 @@ func (sess *session) setup(h proto.Hello) ([]proto.TunnelInfo, error) {
 		var err error
 		switch t.Type {
 		case proto.TypeHTTP:
-			infos[i], err = sess.addHTTP(i, strings.ToLower(t.Subdomain), t.Claim, t.Password)
+			infos[i], err = sess.addHTTP(i, t)
 		case proto.TypeTCP:
 			infos[i], err = sess.addTCP(i, t.RemotePort)
 		default:
@@ -667,12 +684,13 @@ func (s *Server) register(sess *session) error {
 	return nil
 }
 
-func (sess *session) addHTTP(idx int, sub, claim, password string) (proto.TunnelInfo, error) {
+func (sess *session) addHTTP(idx int, t proto.TunnelReq) (proto.TunnelInfo, error) {
 	s := sess.srv
-	if len(password) > 200 {
-		return proto.TunnelInfo{}, errors.New("password too long")
+	sub, claim, password := strings.ToLower(t.Subdomain), t.Claim, t.Password
+	if len(password) > 200 || len(t.Note) > 200 {
+		return proto.TunnelInfo{}, errors.New("password or note too long (200 characters)")
 	}
-	rt := &route{sess: sess, idx: idx, password: password}
+	rt := &route{sess: sess, idx: idx, password: password, note: strings.TrimSpace(t.Note), maxVisit: t.MaxVisitors}
 	if n := s.cfg.RequestsPerMinute; n > 0 {
 		rt.limiter = newBucket(n)
 	}
@@ -692,6 +710,9 @@ func (sess *session) addHTTP(idx int, sub, claim, password string) (proto.Tunnel
 			IdleConnTimeout:     90 * time.Second,
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			if resp.Header.Get("PublicLocal-Error") != "" {
+				return errLocalDown // the client could not reach the app; show our page instead
+			}
 			scrubSetCookies(resp, hostOnly(resp.Request.Host))
 			return nil
 		},
@@ -762,6 +783,11 @@ func (sess *session) addHTTP(idx int, sub, claim, password string) (proto.Tunnel
 		age := s.cfg.MaxTunnelAge
 		if sess.account != "" {
 			age = s.cfg.AccountTunnelAge
+		}
+		if t.MaxAge > 0 { // the client may ask for less, never more
+			if want := time.Duration(t.MaxAge) * time.Second; age == 0 || want < age {
+				age = want
+			}
 		}
 		if age > 0 {
 			res.Expires = now.Add(age)

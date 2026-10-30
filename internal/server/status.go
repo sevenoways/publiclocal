@@ -15,7 +15,35 @@ import (
 // The pages also show what the link did: when it was live and how much
 // traffic it saw.
 
-const statusPath = "/.publiclocal/status"
+const (
+	statusPath = "/.publiclocal/status"
+	badgePath  = "/.publiclocal/badge.svg"
+)
+
+// linkBadge answers a small status badge, for READMEs and pull requests.
+func (s *Server) linkBadge(w http.ResponseWriter, sub string) {
+	s.mu.RLock()
+	rt, res := s.hosts[sub], s.reservations[sub]
+	s.mu.RUnlock()
+	state, color := "expired", "#9aa3b2"
+	switch {
+	case rt != nil:
+		state, color = "online", "#2ea44f"
+	case res != nil && !res.expired(time.Now()):
+		state, color = "offline", "#dbab09"
+	}
+	const lw, rw = 58, 54
+	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="20" role="img" aria-label="preview: %s">
+<linearGradient id="s" x2="0" y2="100%%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+<clipPath id="r"><rect width="%d" height="20" rx="3" fill="#fff"/></clipPath>
+<g clip-path="url(#r)"><rect width="%d" height="20" fill="#555"/><rect x="%d" width="%d" height="20" fill="%s"/><rect width="%d" height="20" fill="url(#s)"/></g>
+<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+<text x="%d" y="14">preview</text><text x="%d" y="14">%s</text></g></svg>`,
+		lw+rw, state, lw+rw, lw, lw, rw, color, lw+rw, lw/2, lw+rw/2, state)
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "no-cache, max-age=0")
+	w.Write([]byte(svg))
+}
 
 type statusPage struct {
 	Code    int

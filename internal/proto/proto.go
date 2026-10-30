@@ -44,6 +44,12 @@ type TunnelReq struct {
 	// Password makes the server ask visitors for HTTP Basic auth (any user
 	// name) before anything reaches the local app. HTTP tunnels only.
 	Password string `json:"password,omitempty"`
+	// MaxAge asks for a shorter link lifetime than the server's default, in seconds.
+	MaxAge int64 `json:"max_age,omitempty"`
+	// MaxVisitors closes the link to anyone after the first N visitor networks.
+	MaxVisitors int `json:"max_visitors,omitempty"`
+	// Note is shown to visitors on the warning page, e.g. what the link is.
+	Note string `json:"note,omitempty"`
 	// Claim takes back a link this client was given earlier, e.g. after a
 	// reconnect. It is the Claim from that link's TunnelInfo.
 	Claim string `json:"claim,omitempty"`

@@ -19,6 +19,10 @@ The code is small:
 - `internal/proto` — wire messages
 - `internal/e2e` — end-to-end tests running a real server and client
 
+## Certifying your contribution
+
+Contributions are accepted under the [Developer Certificate of Origin](https://developercertificate.org/): by signing off your commits you certify that you wrote the change or have the right to submit it under the project's MIT licence, and that it may be redistributed under that licence (including under a different open-source licence should the project ever need to change it). Sign off with `git commit -s`, which adds a `Signed-off-by: Your Name <you@example.com>` line.
+
 ## Pull requests
 
 - Open an issue first for larger changes so we can agree on the approach.

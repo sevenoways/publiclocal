@@ -56,14 +56,14 @@ func (s *Server) needsWarning(r *http.Request, host string) bool {
 	return isNavigation(r) && !s.hasValidCookie(r, host)
 }
 
-func (s *Server) serveWarning(w http.ResponseWriter, r *http.Request, host string) {
+func (s *Server) serveWarning(w http.ResponseWriter, r *http.Request, host, note, by string) {
 	next := r.URL.RequestURI()
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		next = r.URL.Path // a form the visitor submitted before seeing the warning
 	}
 	data := struct {
-		Host, Next, Abuse string
-	}{host, next, abuseLink(s.cfg.AbuseContact, host)}
+		Host, Next, Abuse, Note, By string
+	}{host, next, abuseLink(s.cfg.AbuseContact, host), note, by}
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
@@ -196,6 +196,9 @@ var warningPage = template.Must(template.New("warning").Parse(`<!doctype html>
   .tag { display:inline-block; font-size:13px; font-weight:600; color:var(--warn); background:var(--warnbg); border-radius:999px; padding:3px 10px; }
   h1 { font-size:22px; margin:14px 0 6px; }
   .host { font-family:ui-monospace,Consolas,monospace; font-size:15px; word-break:break-all; color:var(--muted); }
+  .note { margin:14px 0 4px; padding:12px 14px; background:var(--bg); border-radius:10px; font-size:15px; }
+  .note .by { display:block; color:var(--muted); font-size:13px; margin-bottom:4px; }
+  .note blockquote { margin:0; white-space:pre-wrap; }
   ul { padding-left:20px; margin:16px 0; }
   li { margin:6px 0; }
   button { width:100%; margin-top:8px; padding:12px; font:inherit; font-weight:600; color:#fff; background:var(--btn); border:0; border-radius:10px; cursor:pointer; }
@@ -209,6 +212,7 @@ var warningPage = template.Must(template.New("warning").Parse(`<!doctype html>
   <span class="tag">Temporary tunnel</span>
   <h1>You are visiting a temporary developer link</h1>
   <div class="host">{{.Host}}</div>
+  {{if or .Note .By}}<div class="note">{{if .By}}<span class="by">Shared by GitHub user <strong>{{.By}}</strong></span>{{end}}{{if .Note}}<blockquote>{{.Note}}</blockquote>{{end}}</div>{{end}}
   <ul>
     <li>This page is served from someone's own computer through <strong>PublicLocal</strong>, a free tunnel for testing and demos. Links stop working after a few hours.</li>
     <li>It is <strong>not</strong> affiliated with any company or brand it may show.</li>

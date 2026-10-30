@@ -28,6 +28,7 @@ type reservation struct {
 	Bytes      int64     `json:"bytes,omitempty"`
 	Visitors   int       `json:"visitors,omitempty"`
 	LastOnline time.Time `json:"last_online,omitzero"`
+	Allowed    []string  `json:"allowed,omitempty"` // visitor networks admitted under a visitor limit
 
 	timer *time.Timer
 	seen  map[string]struct{} // visitor networks counted so far this server run
@@ -71,6 +72,28 @@ func (r *reservation) live(rt *route) (requests, bytes int64, visitors int) {
 		rt.vmu.Unlock()
 	}
 	return
+}
+
+// admitVisitor reports whether a visitor network may use a link limited to
+// max networks, admitting it if there is still room.
+func (s *Server) admitVisitor(sub, key string, max int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res := s.reservations[sub]
+	if res == nil {
+		return false
+	}
+	for _, k := range res.Allowed {
+		if k == key {
+			return true
+		}
+	}
+	if len(res.Allowed) >= max {
+		return false
+	}
+	res.Allowed = append(res.Allowed, key)
+	s.saveLocked()
+	return true
 }
 
 // historyTTL is how long an expired link's summary stays available for its

@@ -30,9 +30,9 @@
 
 <main class="wrap prose">
   <h1>Documentation</h1>
-  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 30 October 2026 · v0.7</span></p>
+  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 30 October 2026 · v1.0</span></p>
   <nav class="toc" aria-label="On this page">
-    <a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Requests &amp; passwords</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
 
   <h2 id="install">Install</h2>
@@ -58,13 +58,30 @@ Link expires in 24 hours; run `publiclocal login` for 7-day links</pre>
   <p>Anyone with the link reaches your app over HTTPS. Press <kbd>Ctrl+C</kbd> to stop. If you run the command again later, you get the <strong>same link</strong> back until it expires; add <code>--new</code> for a different one. You can also forward to another host on your network: <code>publiclocal http 192.168.1.20:8080</code>.</p>
   <p>Browsers see a short "temporary developer link" notice the first time they open a link on the free server. Webhooks, API calls and <code>curl</code> go straight through, and you can skip the notice in any client by sending the header <code>PublicLocal-Skip-Warning: 1</code>.</p>
 
-  <h2 id="requests">Watch requests, protect links, scan a QR code</h2>
-  <p>While a tunnel runs, every request is printed as it is served, so you can watch webhooks arrive without a dashboard (<code>--quiet</code> turns it off):</p>
+  <h2 id="requests">Watch requests, replay webhooks</h2>
+  <p>While a tunnel runs, every request is printed as it is served (<code>--quiet</code> turns it off), and the <strong>inspector</strong> at <a href="http://127.0.0.1:4040">localhost:4040</a> shows each one with headers and bodies. Select a request and click <em>Replay against localhost</em> to send it to your app again, which is how you fix a webhook handler without triggering the webhook over and over. <code>--inspect ""</code> turns the inspector off; <code>--inspect 127.0.0.1:5050</code> moves it.</p>
 <pre class="block">14:02:11  POST   /webhooks/stripe                          200    12 ms  54.187.174.169
-14:02:13  GET    /api/orders/42                            404     3 ms  203.0.113.7</pre>
-  <p><code>--password s3cret</code> makes the server ask visitors for the password (any user name) before anything reaches your app; the app never sees the password header. <code>--qr</code> prints a QR code of the link so you can open it on a phone without typing.</p>
-<pre class="block"><span class="dim">$</span> publiclocal http --password s3cret --qr 3000</pre>
-  <p>Every link also answers <code>/.publiclocal/status</code> with JSON (<code>online</code>, <code>expires</code>, <code>requests</code>, <code>visitors</code>), and when a link is offline or has expired, visitors see a page saying so, with when it was live and how much traffic it served.</p>
+14:02:13  GET    /api/orders/42                            404     3 ms  203.0.113.7
+^C
+Served 2 requests from 2 visitors · 4 KB · top: /webhooks/stripe (1), /api/orders/42 (1)</pre>
+
+  <h2 id="links">Passwords, notes, self-destructing links, QR codes</h2>
+<pre class="block"><span class="dim">$</span> publiclocal http --password s3cret 3000     <span class="dim"># visitors must enter the password (any user name)</span>
+<span class="dim">$</span> publiclocal http --max-visits 1 3000         <span class="dim"># only the first person who opens it can use it</span>
+<span class="dim">$</span> publiclocal http --expires 30m 3000          <span class="dim"># gone after half an hour</span>
+<span class="dim">$</span> publiclocal http --note "Staging build for Anna" 3000
+<span class="dim">$</span> publiclocal http --qr 3000                   <span class="dim"># QR code in the terminal, for your phone</span>
+<span class="dim">$</span> publiclocal http --cors 3000                 <span class="dim"># permissive CORS headers for browser apps</span>
+<span class="dim">$</span> publiclocal http 3000 8080                   <span class="dim"># two links in one go</span></pre>
+  <p>The password is checked by the server before anything reaches your app, and your app never sees the password header. The note appears on the first page visitors see, together with your GitHub name if you are signed in. <code>--max-visits</code> counts visitor networks: the first N people who open the link keep access, everyone else gets "visitor limit reached".</p>
+
+  <h2 id="share">Share a folder or a file</h2>
+<pre class="block"><span class="dim">$</span> publiclocal share ./build          <span class="dim"># a folder, with a listing</span>
+<span class="dim">$</span> publiclocal share report.pdf       <span class="dim"># a single file, served at /</span></pre>
+  <p>No web server needed: PublicLocal serves the files itself. Folders with an <code>index.html</code> are served as a site; others get a tidy listing. Dotfiles are hidden. All the link flags above apply, so <code>publiclocal share --password s3cret --max-visits 1 report.pdf</code> hands one file to one person.</p>
+
+  <h2 id="status">Link status, badge and stats</h2>
+  <p>Every link answers <code>/.publiclocal/status</code> with JSON (<code>state</code>, <code>expires</code>, <code>requests</code>, <code>visitors</code>, <code>bytes</code>) and <code>/.publiclocal/badge.svg</code> with a small <em>preview: online / offline / expired</em> badge for a README or pull request. When a link is offline or has expired, visitors see a page saying so, with when it was live and how much traffic it served.</p>
 
   <h2 id="login">Sign in for 7-day links</h2>
 <pre class="block"><span class="dim">$</span> publiclocal login            <span class="dim"># opens GitHub sign-in; type the code shown in your terminal</span>
@@ -78,7 +95,8 @@ Link expires in 24 hours; run `publiclocal login` for 7-day links</pre>
   <div class="table-wrap"><table>
     <thead><tr><th>Command</th><th>What it does</th></tr></thead>
     <tbody>
-    <tr><td><code>publiclocal http &lt;port&gt;</code></td><td>Public HTTPS link for a local HTTP server. Flags: <code>--password</code>, <code>--qr</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
+    <tr><td><code>publiclocal http &lt;port&gt; [port...]</code></td><td>Public HTTPS links for local HTTP servers. Flags: <code>--password</code>, <code>--max-visits</code>, <code>--expires</code>, <code>--note</code>, <code>--cors</code>, <code>--qr</code>, <code>--inspect</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
+    <tr><td><code>publiclocal share &lt;path&gt;</code></td><td>Serve a folder or file from this computer and share it. Same flags as <code>http</code>.</td></tr>
     <tr><td><code>publiclocal tcp &lt;port&gt;</code></td><td>Public TCP port for SSH, databases or game servers. Self-hosted servers only. <code>--remote-port N</code> asks for a fixed port.</td></tr>
     <tr><td><code>publiclocal login</code> / <code>logout</code></td><td>Sign in with GitHub for 7-day links; sign out and revoke the token.</td></tr>
     <tr><td><code>publiclocal links</code></td><td>List your links, whether they are online, and when they expire.</td></tr>

@@ -26,6 +26,10 @@ type Tunnel struct {
 	RemotePort int    // TCP only; 0 for a random one
 	Password   string // HTTP only; visitors must give it as HTTP Basic auth
 
+	MaxAge      time.Duration // HTTP only; ask for a shorter link lifetime than the server default
+	MaxVisitors int           // HTTP only; only the first N visitor networks may use the link
+	Note        string        // HTTP only; shown to visitors on the warning page
+
 	// Claim takes back a link from an earlier run. The server returns it in
 	// TunnelInfo; callers may store it to reuse a link across restarts.
 	Claim string
@@ -44,6 +48,14 @@ type Config struct {
 	OnReady func([]proto.TunnelInfo)
 	// OnEvent, if set, receives one Event per HTTP request the server proxied.
 	OnEvent func(proto.Event)
+
+	// OnRequest, if set, receives every HTTP request this client served,
+	// with headers and bodies when CaptureBody > 0 (bytes per body).
+	OnRequest   func(Captured)
+	CaptureBody int
+	// CORS adds permissive CORS headers to every HTTP response, so a browser
+	// app on another origin can call the local API during development.
+	CORS bool
 }
 
 // RejectedError is returned when the server refuses the session (bad token,
@@ -110,7 +122,10 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 	}
 	hello := proto.Hello{Version: proto.Version, Token: cfg.Token, Account: cfg.Account, Events: cfg.OnEvent != nil}
 	for _, t := range cfg.Tunnels {
-		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.Claim, Password: t.Password})
+		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{
+			Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.Claim, Password: t.Password,
+			MaxAge: int64(t.MaxAge / time.Second), MaxVisitors: t.MaxVisitors, Note: t.Note,
+		})
 	}
 	ctrl.SetDeadline(time.Now().Add(15 * time.Second))
 	if err := proto.Write(ctrl, hello); err != nil {
@@ -148,6 +163,15 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 		}()
 	}
 
+	// HTTP tunnels get an in-process HTTP server fed by their streams.
+	https := make([]*httpTunnel, len(cfg.Tunnels))
+	for i, t := range cfg.Tunnels {
+		if t.Type == proto.TypeHTTP {
+			https[i] = newHTTPTunnel(i, t, cfg)
+			defer https[i].close()
+		}
+	}
+
 	stop := context.AfterFunc(ctx, func() { ys.Close() })
 	defer stop()
 	for {
@@ -155,11 +179,11 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 		if err != nil {
 			return true, err
 		}
-		go handleStream(st, cfg)
+		go handleStream(st, cfg, https)
 	}
 }
 
-func handleStream(st net.Conn, cfg Config) {
+func handleStream(st net.Conn, cfg Config, https []*httpTunnel) {
 	st.SetReadDeadline(time.Now().Add(10 * time.Second))
 	var h proto.StreamHeader
 	if err := proto.Read(st, &h); err != nil || h.Tunnel < 0 || h.Tunnel >= len(cfg.Tunnels) {
@@ -167,6 +191,10 @@ func handleStream(st net.Conn, cfg Config) {
 		return
 	}
 	st.SetReadDeadline(time.Time{})
+	if ht := https[h.Tunnel]; ht != nil {
+		ht.ln.push(st)
+		return
+	}
 	t := cfg.Tunnels[h.Tunnel]
 	local, err := net.DialTimeout("tcp", t.Local, 10*time.Second)
 	if err != nil {
