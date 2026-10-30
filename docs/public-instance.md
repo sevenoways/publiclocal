@@ -127,12 +127,14 @@ Set up the abuse mailbox you list in `--abuse-contact` and read it. Hosting prov
 
 ## 5. CAA record
 
-Add a CAA record so only your own Let's Encrypt account can issue certificates for the domain and its tunnels. The account address is in the log at first start (`journalctl -u publiclocal | grep "acme account"`):
+Add CAA records so no certificate authority other than Let's Encrypt can issue certificates for the domain or its tunnels:
 
 ```
-CAA  publiclocal.app  0 issue     "letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/<your id>"
-CAA  publiclocal.app  0 issuewild "letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/<your id>"
+CAA  publiclocal.app  0 issue     "letsencrypt.org"
+CAA  publiclocal.app  0 issuewild "letsencrypt.org"
 ```
+
+Tighter still, pin issuance to your own ACME account by appending `; accounturi=<account URL>` to both values. The server logs the URL (`journalctl -u publiclocal | grep "acme account"`) whenever it obtains or renews the certificate.
 
 ## 6. Public Suffix List
 
