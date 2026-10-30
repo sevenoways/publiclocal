@@ -23,12 +23,59 @@ type reservation struct {
 	Created   time.Time `json:"created"`
 	Expires   time.Time `json:"expires,omitzero"` // zero: never
 
+	// Traffic the link has seen, shown on its status pages.
+	Requests   int64     `json:"requests,omitempty"`
+	Bytes      int64     `json:"bytes,omitempty"`
+	Visitors   int       `json:"visitors,omitempty"`
+	LastOnline time.Time `json:"last_online,omitzero"`
+
 	timer *time.Timer
+	seen  map[string]struct{} // visitor networks counted so far this server run
 }
 
 func (r *reservation) expired(now time.Time) bool {
 	return !r.Expires.IsZero() && !now.Before(r.Expires)
 }
+
+// fold moves a route's counters into the reservation. Callers hold s.mu.
+func (r *reservation) fold(rt *route) {
+	r.Requests += rt.requests.Swap(0)
+	r.Bytes += rt.bytes.Swap(0)
+	rt.vmu.Lock()
+	for k := range rt.visitors {
+		if r.seen == nil {
+			r.seen = map[string]struct{}{}
+		}
+		if _, ok := r.seen[k]; !ok && len(r.seen) < maxVisitorSet {
+			r.seen[k] = struct{}{}
+			r.Visitors++
+		}
+	}
+	rt.visitors = nil
+	rt.vmu.Unlock()
+}
+
+// live returns the reservation's counters including the route currently
+// serving it, if any. Callers hold s.mu.
+func (r *reservation) live(rt *route) (requests, bytes int64, visitors int) {
+	requests, bytes, visitors = r.Requests, r.Bytes, r.Visitors
+	if rt != nil {
+		requests += rt.requests.Load()
+		bytes += rt.bytes.Load()
+		rt.vmu.Lock()
+		for k := range rt.visitors {
+			if _, ok := r.seen[k]; !ok {
+				visitors++
+			}
+		}
+		rt.vmu.Unlock()
+	}
+	return
+}
+
+// historyTTL is how long an expired link's summary stays available for its
+// "this link has expired" page.
+const historyTTL = 30 * 24 * time.Hour
 
 // account is a user who signed in with GitHub.
 type account struct {
@@ -45,11 +92,13 @@ type persisted struct {
 	CookieKey    string                  `json:"cookie_key"`
 	Reservations map[string]*reservation `json:"reservations"`
 	Accounts     map[string]*account     `json:"accounts"`
+	History      map[string]*reservation `json:"history,omitempty"` // expired links, for their status pages
 }
 
 func (s *Server) loadState() {
 	s.reservations = map[string]*reservation{}
 	s.accounts = map[string]*account{}
+	s.history = map[string]*reservation{}
 	s.dirty = make(chan struct{}, 1)
 	var p persisted
 	if s.cfg.StateFile != "" {
@@ -78,6 +127,11 @@ func (s *Server) loadState() {
 	}
 	if p.Accounts != nil {
 		s.accounts = p.Accounts
+	}
+	for sub, r := range p.History {
+		if now.Sub(r.Expires) < historyTTL {
+			s.history[sub] = r
+		}
 	}
 	if s.cfg.StateFile != "" {
 		go s.saveLoop()
@@ -113,7 +167,7 @@ func (s *Server) Flush() {
 
 func (s *Server) writeState() {
 	s.mu.RLock()
-	b, err := json.MarshalIndent(persisted{CookieKey: hex.EncodeToString(s.cookieKey), Reservations: s.reservations, Accounts: s.accounts}, "", "  ")
+	b, err := json.MarshalIndent(persisted{CookieKey: hex.EncodeToString(s.cookieKey), Reservations: s.reservations, Accounts: s.accounts, History: s.history}, "", "  ")
 	s.mu.RUnlock()
 	if err != nil {
 		s.log.Error("cannot encode state", "err", err)
@@ -156,6 +210,19 @@ func (s *Server) expire(r *reservation) {
 	delete(s.flags, r.Sub)
 	rt := s.hosts[r.Sub]
 	delete(s.hosts, r.Sub)
+	if rt != nil {
+		r.fold(rt)
+		r.LastOnline = time.Now()
+	}
+	// Keep a summary for the "this link has expired" page, and drop old ones.
+	r.seen = nil
+	s.history[r.Sub] = r
+	cutoff := time.Now().Add(-historyTTL)
+	for sub, h := range s.history {
+		if h.Expires.Before(cutoff) {
+			delete(s.history, sub)
+		}
+	}
 	s.saveLocked()
 	s.mu.Unlock()
 	if rt != nil {

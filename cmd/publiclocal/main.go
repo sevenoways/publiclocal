@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
+
+	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/sevenoways/publiclocal/internal/client"
 	"github.com/sevenoways/publiclocal/internal/proto"
@@ -175,6 +178,9 @@ func runClient(ctx context.Context, kind string, args []string) error {
 	sub := fs.String("subdomain", "", "requested subdomain (http only, own server)")
 	link := fs.String("link", "", "take back one of your links by name, e.g. k7xq2m (http only, signed in)")
 	fresh := fs.Bool("new", false, "get a new link instead of reusing the last one for this port")
+	password := fs.String("password", os.Getenv("PUBLICLOCAL_PASSWORD"), "visitors must enter this password, any user name (http only; env PUBLICLOCAL_PASSWORD)")
+	qr := fs.Bool("qr", false, "print a QR code of the link to scan with a phone")
+	quiet := fs.Bool("quiet", false, "do not print each request as it is served")
 	remotePort := fs.Int("remote-port", 0, "requested public port (tcp only)")
 	debug := fs.Bool("debug", false, "verbose logging")
 	fs.Usage = func() {
@@ -200,6 +206,7 @@ func runClient(ctx context.Context, kind string, args []string) error {
 	t := client.Tunnel{Type: kind, Local: local}
 	if kind == proto.TypeHTTP {
 		t.Subdomain = *sub
+		t.Password = *password
 		if *link != "" {
 			t.Subdomain = linkName(*link)
 		}
@@ -238,6 +245,14 @@ func runClient(ctx context.Context, kind string, args []string) error {
 					}
 					last = i.URL
 					fmt.Printf("Forwarding %s -> %s\n", i.URL, local)
+					if *password != "" && i.Type == proto.TypeHTTP {
+						fmt.Println("Password protected: visitors must enter the password (any user name)")
+					}
+					if *qr {
+						if q, err := qrcode.New(i.URL, qrcode.Medium); err == nil {
+							fmt.Print("\n" + q.ToSmallString(false) + "\n")
+						}
+					}
 					if !i.Expires.IsZero() {
 						hint := ""
 						switch {
@@ -253,6 +268,7 @@ func runClient(ctx context.Context, kind string, args []string) error {
 					}
 				}
 			},
+			OnEvent: requestPrinter(*quiet),
 		})
 		var rej *client.RejectedError
 		if reusing && errors.As(err, &rej) {
@@ -263,6 +279,24 @@ func runClient(ctx context.Context, kind string, args []string) error {
 		}
 		return err
 	}
+}
+
+// requestPrinter shows each proxied request on the terminal as it happens,
+// like a lightweight traffic inspector: time, method, path, status, duration, visitor.
+func requestPrinter(quiet bool) func(proto.Event) {
+	if quiet {
+		return nil
+	}
+	return func(ev proto.Event) {
+		fmt.Printf("%s  %-6s %-40s %d  %4d ms  %s\n", time.Now().Format("15:04:05"), ev.Method, clip(ev.Path, 40), ev.Status, ev.Millis, ev.Remote)
+	}
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func parseRange(s string) (int, int, error) {

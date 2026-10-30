@@ -99,6 +99,7 @@ type ShareInput struct {
 	Port      int    `json:"port" jsonschema:"local port the app listens on, e.g. 3000"`
 	Kind      string `json:"kind,omitempty" jsonschema:"http (default) or tcp; tcp needs a self-hosted server"`
 	Subdomain string `json:"subdomain,omitempty" jsonschema:"requested name; only on self-hosted servers, the public server assigns random names"`
+	Password  string `json:"password,omitempty" jsonschema:"if set, visitors must enter this password (HTTP Basic auth, any user name) before reaching the app"`
 }
 
 type ShareOutput struct {
@@ -149,7 +150,7 @@ func (m *manager) share(_ context.Context, _ *mcp.CallToolRequest, in ShareInput
 			Token:   m.opts.Token,
 			Account: m.opts.Account,
 			TLS:     m.opts.TLS,
-			Tunnels: []client.Tunnel{{Type: in.Kind, Local: local, Subdomain: in.Subdomain}},
+			Tunnels: []client.Tunnel{{Type: in.Kind, Local: local, Subdomain: in.Subdomain, Password: in.Password}},
 			Logger:  m.opts.Logger,
 			OnReady: func(infos []proto.TunnelInfo) {
 				m.mu.Lock()

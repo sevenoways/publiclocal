@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -127,7 +128,8 @@ type Server struct {
 	sessions     map[*session]struct{}
 	bans         map[string]bool
 	reservations map[string]*reservation
-	accounts     map[string]*account // by GitHub login
+	history      map[string]*reservation // expired links, for their status pages
+	accounts     map[string]*account     // by GitHub login
 	logins       map[string]*pendingLogin
 	flags        map[string]*Flag
 
@@ -138,9 +140,66 @@ type Server struct {
 }
 
 type route struct {
-	sess    *session
-	proxy   *httputil.ReverseProxy
-	limiter *bucket
+	sess     *session
+	idx      int // index of the tunnel in the client's Hello
+	proxy    *httputil.ReverseProxy
+	limiter  *bucket
+	password string // HTTP Basic auth password visitors must give; empty for none
+
+	requests atomic.Int64
+	bytes    atomic.Int64
+	vmu      sync.Mutex
+	visitors map[string]struct{} // client networks seen, capped
+}
+
+const maxVisitorSet = 5000
+
+// record accounts for one served request and tells the client about it.
+func (rt *route) record(r *http.Request, status int, n int64, d time.Duration) {
+	rt.requests.Add(1)
+	rt.bytes.Add(n)
+	key := ipKey(r.RemoteAddr)
+	rt.vmu.Lock()
+	if rt.visitors == nil {
+		rt.visitors = map[string]struct{}{}
+	}
+	if len(rt.visitors) < maxVisitorSet {
+		rt.visitors[key] = struct{}{}
+	}
+	rt.vmu.Unlock()
+	path := r.URL.RequestURI()
+	if len(path) > 200 {
+		path = path[:200] + "…"
+	}
+	remote, _, _ := net.SplitHostPort(r.RemoteAddr)
+	rt.sess.emit(proto.Event{Tunnel: rt.idx, Method: r.Method, Path: path, Status: status, Millis: d.Milliseconds(), Bytes: n, Remote: remote})
+}
+
+// countingWriter captures the status and size of a proxied response. It
+// passes Flush and Hijack through, which WebSockets and streaming need.
+type countingWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (c *countingWriter) WriteHeader(code int) { c.status = code; c.ResponseWriter.WriteHeader(code) }
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.ResponseWriter.Write(p)
+	c.bytes += int64(n)
+	return n, err
+}
+func (c *countingWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
+func (c *countingWriter) Flush() {
+	if f, ok := c.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+func (c *countingWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := c.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, errors.New("hijack not supported")
 }
 
 func New(cfg Config) *Server {
@@ -368,15 +427,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "publiclocal: no tunnel here", http.StatusNotFound)
 		return
 	}
+	if r.URL.Path == statusPath {
+		s.linkStatus(w, sub)
+		return
+	}
 	s.mu.RLock()
 	rt := s.hosts[sub]
 	res := s.reservations[sub]
 	s.mu.RUnlock()
 	if rt == nil {
 		if res != nil && !res.expired(time.Now()) {
-			s.linkOffline(w, r, host)
+			s.linkOffline(w, r, host, res)
 		} else {
-			s.linkGone(w, r, host)
+			s.linkGone(w, r, host, s.pastLink(sub))
 		}
 		return
 	}
@@ -398,6 +461,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if rt.password != "" {
+		_, pw, ok := r.BasicAuth()
+		if !ok || subtle.ConstantTimeCompare([]byte(pw), []byte(rt.password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="PublicLocal link", charset="UTF-8"`)
+			http.Error(w, "publiclocal: this link needs a password", http.StatusUnauthorized)
+			return
+		}
+		r.Header.Del("Authorization") // the app never sees the link password
+	}
 	if rt.limiter != nil && !rt.limiter.allow() {
 		http.Error(w, "publiclocal: too many requests to this tunnel", http.StatusTooManyRequests)
 		return
@@ -405,7 +477,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.MaxRequestBody > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxRequestBody)
 	}
-	rt.proxy.ServeHTTP(w, r)
+	start := time.Now()
+	cw := &countingWriter{ResponseWriter: w, status: http.StatusOK}
+	rt.proxy.ServeHTTP(cw, r)
+	rt.record(r, cw.status, cw.bytes, time.Since(start))
 }
 
 var subdomainRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
@@ -425,6 +500,32 @@ type session struct {
 	listeners []net.Listener
 	bytes     atomic.Int64
 	overLimit atomic.Bool
+	events    chan proto.Event // nil unless the client asked for request events
+}
+
+// emit queues a request event for the client, dropping it if the client is
+// not keeping up; events are informational.
+func (sess *session) emit(ev proto.Event) {
+	if sess.events == nil {
+		return
+	}
+	select {
+	case sess.events <- ev:
+	default:
+	}
+}
+
+func (sess *session) pumpEvents(ctrl net.Conn) {
+	for {
+		select {
+		case ev := <-sess.events:
+			if proto.Write(ctrl, ev) != nil {
+				return
+			}
+		case <-sess.ys.CloseChan():
+			return
+		}
+	}
 }
 
 func (s *Server) handleSession(conn net.Conn) {
@@ -471,6 +572,10 @@ func (s *Server) handleSession(conn net.Conn) {
 		log.Info("tunnel open", "url", t.URL, "account", sess.account, "expires", t.Expires)
 	}
 
+	if hello.Events {
+		sess.events = make(chan proto.Event, 256)
+		go sess.pumpEvents(ctrl)
+	}
 	go func() {
 		io.Copy(io.Discard, ctrl) // the client closing its control stream ends the session
 		ys.Close()
@@ -522,7 +627,7 @@ func (sess *session) setup(h proto.Hello) ([]proto.TunnelInfo, error) {
 		var err error
 		switch t.Type {
 		case proto.TypeHTTP:
-			infos[i], err = sess.addHTTP(i, strings.ToLower(t.Subdomain), t.Claim)
+			infos[i], err = sess.addHTTP(i, strings.ToLower(t.Subdomain), t.Claim, t.Password)
 		case proto.TypeTCP:
 			infos[i], err = sess.addTCP(i, t.RemotePort)
 		default:
@@ -558,9 +663,12 @@ func (s *Server) register(sess *session) error {
 	return nil
 }
 
-func (sess *session) addHTTP(idx int, sub, claim string) (proto.TunnelInfo, error) {
+func (sess *session) addHTTP(idx int, sub, claim, password string) (proto.TunnelInfo, error) {
 	s := sess.srv
-	rt := &route{sess: sess}
+	if len(password) > 200 {
+		return proto.TunnelInfo{}, errors.New("password too long")
+	}
+	rt := &route{sess: sess, idx: idx, password: password}
 	if n := s.cfg.RequestsPerMinute; n > 0 {
 		rt.limiter = newBucket(n)
 	}
@@ -807,9 +915,14 @@ func (sess *session) release() {
 		if rt := s.hosts[sub]; rt != nil && rt.sess == sess {
 			rt.proxy.Transport.(*http.Transport).CloseIdleConnections()
 			delete(s.hosts, sub)
+			if res := s.reservations[sub]; res != nil {
+				res.fold(rt)
+				res.LastOnline = time.Now()
+			}
 		}
 	}
 	delete(s.sessions, sess)
+	s.saveLocked()
 	s.mu.Unlock()
 	for _, ln := range sess.listeners {
 		ln.Close()

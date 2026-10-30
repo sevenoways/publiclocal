@@ -24,6 +24,7 @@ type Tunnel struct {
 	Local      string // local address to forward to, e.g. "127.0.0.1:3000"
 	Subdomain  string // HTTP only; empty for a random one
 	RemotePort int    // TCP only; 0 for a random one
+	Password   string // HTTP only; visitors must give it as HTTP Basic auth
 
 	// Claim takes back a link from an earlier run. The server returns it in
 	// TunnelInfo; callers may store it to reuse a link across restarts.
@@ -41,6 +42,8 @@ type Config struct {
 
 	// OnReady, if set, is called with the public URLs each time a session is established.
 	OnReady func([]proto.TunnelInfo)
+	// OnEvent, if set, receives one Event per HTTP request the server proxied.
+	OnEvent func(proto.Event)
 }
 
 // RejectedError is returned when the server refuses the session (bad token,
@@ -105,9 +108,9 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	hello := proto.Hello{Version: proto.Version, Token: cfg.Token, Account: cfg.Account}
+	hello := proto.Hello{Version: proto.Version, Token: cfg.Token, Account: cfg.Account, Events: cfg.OnEvent != nil}
 	for _, t := range cfg.Tunnels {
-		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.Claim})
+		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.Claim, Password: t.Password})
 	}
 	ctrl.SetDeadline(time.Now().Add(15 * time.Second))
 	if err := proto.Write(ctrl, hello); err != nil {
@@ -132,6 +135,17 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 	}
 	if cfg.OnReady != nil {
 		cfg.OnReady(resp.Tunnels)
+	}
+	if cfg.OnEvent != nil {
+		go func() {
+			for {
+				var ev proto.Event
+				if err := proto.Read(ctrl, &ev); err != nil {
+					return
+				}
+				cfg.OnEvent(ev)
+			}
+		}()
 	}
 
 	stop := context.AfterFunc(ctx, func() { ys.Close() })

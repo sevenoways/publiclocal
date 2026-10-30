@@ -32,7 +32,7 @@
   <h1>Documentation</h1>
   <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 30 October 2026 · v0.7</span></p>
   <nav class="toc" aria-label="On this page">
-    <a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Requests &amp; passwords</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
 
   <h2 id="install">Install</h2>
@@ -58,6 +58,14 @@ Link expires in 24 hours; run `publiclocal login` for 7-day links</pre>
   <p>Anyone with the link reaches your app over HTTPS. Press <kbd>Ctrl+C</kbd> to stop. If you run the command again later, you get the <strong>same link</strong> back until it expires; add <code>--new</code> for a different one. You can also forward to another host on your network: <code>publiclocal http 192.168.1.20:8080</code>.</p>
   <p>Browsers see a short "temporary developer link" notice the first time they open a link on the free server. Webhooks, API calls and <code>curl</code> go straight through, and you can skip the notice in any client by sending the header <code>PublicLocal-Skip-Warning: 1</code>.</p>
 
+  <h2 id="requests">Watch requests, protect links, scan a QR code</h2>
+  <p>While a tunnel runs, every request is printed as it is served, so you can watch webhooks arrive without a dashboard (<code>--quiet</code> turns it off):</p>
+<pre class="block">14:02:11  POST   /webhooks/stripe                          200    12 ms  54.187.174.169
+14:02:13  GET    /api/orders/42                            404     3 ms  203.0.113.7</pre>
+  <p><code>--password s3cret</code> makes the server ask visitors for the password (any user name) before anything reaches your app; the app never sees the password header. <code>--qr</code> prints a QR code of the link so you can open it on a phone without typing.</p>
+<pre class="block"><span class="dim">$</span> publiclocal http --password s3cret --qr 3000</pre>
+  <p>Every link also answers <code>/.publiclocal/status</code> with JSON (<code>online</code>, <code>expires</code>, <code>requests</code>, <code>visitors</code>), and when a link is offline or has expired, visitors see a page saying so, with when it was live and how much traffic it served.</p>
+
   <h2 id="login">Sign in for 7-day links</h2>
 <pre class="block"><span class="dim">$</span> publiclocal login            <span class="dim"># opens GitHub sign-in; type the code shown in your terminal</span>
 <span class="dim">$</span> publiclocal http 3000        <span class="dim"># links now last 7 days</span>
@@ -70,7 +78,7 @@ Link expires in 24 hours; run `publiclocal login` for 7-day links</pre>
   <div class="table-wrap"><table>
     <thead><tr><th>Command</th><th>What it does</th></tr></thead>
     <tbody>
-    <tr><td><code>publiclocal http &lt;port&gt;</code></td><td>Public HTTPS link for a local HTTP server. Flags: <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
+    <tr><td><code>publiclocal http &lt;port&gt;</code></td><td>Public HTTPS link for a local HTTP server. Flags: <code>--password</code>, <code>--qr</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
     <tr><td><code>publiclocal tcp &lt;port&gt;</code></td><td>Public TCP port for SSH, databases or game servers. Self-hosted servers only. <code>--remote-port N</code> asks for a fixed port.</td></tr>
     <tr><td><code>publiclocal login</code> / <code>logout</code></td><td>Sign in with GitHub for 7-day links; sign out and revoke the token.</td></tr>
     <tr><td><code>publiclocal links</code></td><td>List your links, whether they are online, and when they expire.</td></tr>

@@ -6,6 +6,7 @@ require (
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/hashicorp/yamux v0.1.2
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.58.0
 )
 

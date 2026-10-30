@@ -33,6 +33,7 @@ type Hello struct {
 	Version int         `json:"version"`
 	Token   string      `json:"token,omitempty"`   // server access token (private servers)
 	Account string      `json:"account,omitempty"` // user login token from `publiclocal login`
+	Events  bool        `json:"events,omitempty"`  // send an Event down the control stream per request served
 	Tunnels []TunnelReq `json:"tunnels"`
 }
 
@@ -40,6 +41,9 @@ type TunnelReq struct {
 	Type       string `json:"type"`
 	Subdomain  string `json:"subdomain,omitempty"`
 	RemotePort int    `json:"remote_port,omitempty"`
+	// Password makes the server ask visitors for HTTP Basic auth (any user
+	// name) before anything reaches the local app. HTTP tunnels only.
+	Password string `json:"password,omitempty"`
 	// Claim takes back a link this client was given earlier, e.g. after a
 	// reconnect. It is the Claim from that link's TunnelInfo.
 	Claim string `json:"claim,omitempty"`
@@ -56,6 +60,18 @@ type TunnelInfo struct {
 	Name    string    `json:"name,omitempty"`   // subdomain of an HTTP tunnel
 	Claim   string    `json:"claim,omitempty"`  // secret for taking the link back
 	Expires time.Time `json:"expires,omitzero"` // zero means the link does not expire
+}
+
+// Event describes one HTTP request a tunnel served. The server writes these
+// on the control stream after the handshake when the Hello asked for them.
+type Event struct {
+	Tunnel int    `json:"tunnel"`
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Status int    `json:"status"`
+	Millis int64  `json:"ms"`
+	Bytes  int64  `json:"bytes"`
+	Remote string `json:"remote,omitempty"`
 }
 
 type StreamHeader struct {
