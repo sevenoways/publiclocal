@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 )
 
 // Version is the protocol version spoken by this build.
@@ -30,7 +31,8 @@ const (
 
 type Hello struct {
 	Version int         `json:"version"`
-	Token   string      `json:"token,omitempty"`
+	Token   string      `json:"token,omitempty"`   // server access token (private servers)
+	Account string      `json:"account,omitempty"` // user login token from `publiclocal login`
 	Tunnels []TunnelReq `json:"tunnels"`
 }
 
@@ -38,6 +40,9 @@ type TunnelReq struct {
 	Type       string `json:"type"`
 	Subdomain  string `json:"subdomain,omitempty"`
 	RemotePort int    `json:"remote_port,omitempty"`
+	// Claim takes back a link this client was given earlier, e.g. after a
+	// reconnect. It is the Claim from that link's TunnelInfo.
+	Claim string `json:"claim,omitempty"`
 }
 
 type HelloResp struct {
@@ -46,8 +51,11 @@ type HelloResp struct {
 }
 
 type TunnelInfo struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
+	Type    string    `json:"type"`
+	URL     string    `json:"url"`
+	Name    string    `json:"name,omitempty"`   // subdomain of an HTTP tunnel
+	Claim   string    `json:"claim,omitempty"`  // secret for taking the link back
+	Expires time.Time `json:"expires,omitzero"` // zero means the link does not expire
 }
 
 type StreamHeader struct {

@@ -42,7 +42,7 @@
     <p class="lead">Share the app running on your computer with a public HTTPS link, in one command. Test webhooks, show a client, or try your site on your phone.</p>
     <div class="term" role="img" aria-label="Terminal: publiclocal http 3000 prints a public HTTPS URL">
 <span class="dim">$</span> publiclocal http 3000
-Forwarding <span class="url">https://3f9a1c2b7e.publiclocal.app</span> -&gt; 127.0.0.1:3000
+Forwarding <span class="url">https://k7xq2m.publiclocal.app</span> -&gt; 127.0.0.1:3000
     </div>
     <div class="cta">
       <a class="btn primary" href="#install">Get started</a>
@@ -100,12 +100,25 @@ Forwarding <span class="url">https://3f9a1c2b7e.publiclocal.app</span> -&gt; 127
     </div>
   </section>
 
+  <section id="login">
+    <div class="wrap">
+      <h2>Keep links for a week</h2>
+      <p class="sub">Links last 24 hours. Sign in with GitHub and they last 7 days, and you can extend them again before they run out.</p>
+<pre class="block"><span style="color:#8592a8">$</span> publiclocal login
+<span style="color:#8592a8">$</span> publiclocal http 3000
+Forwarding <span style="color:#7ee2a8">https://k7xq2m.publiclocal.app</span> -&gt; localhost:3000
+Link expires in 7 days
+<span style="color:#8592a8">$</span> publiclocal extend k7xq2m
+<span style="color:#8592a8">$</span> publiclocal links</pre>
+    </div>
+  </section>
+
   <section id="free">
     <div class="wrap">
       <div class="notice">
         <h3>The free server is for temporary use</h3>
         <ul>
-          <li>Links use random names and expire after 2 hours; the client reconnects with a new one.</li>
+          <li>Links use random names and last 24 hours, keeping the same address if your connection drops. <a href="#login">Sign in with GitHub</a> for 7-day links you can extend.</li>
           <li>Visitors in a browser see a short notice before your app. Webhooks, APIs and <code>curl</code> skip it, and you can skip it with the header <code>PublicLocal-Skip-Warning: 1</code>.</li>
           <li>HTTP only, with fair-use limits on requests and traffic. See <a href="/terms">fair use</a>.</li>
           <li>Need a permanent address, your own domain, or TCP (SSH, databases)? Run your own server.</li>

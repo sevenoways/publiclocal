@@ -24,6 +24,10 @@ func runAdmin(args []string) error {
   ban <ip>          ban an IP and close its sessions
   unban <ip>        lift a ban
   bans              list banned IPs
+  flags             links the misuse checker flagged as possible phishing
+  scan              check a random sample of live links now
+  suspend <link>    remove a link and ban the IP and GitHub account behind it
+  unban-user <login> lift a ban on a GitHub account
 `)
 	}
 	fs.Parse(args)
@@ -34,6 +38,16 @@ func runAdmin(args []string) error {
 		path = "/tunnels"
 	case cmd == "bans" && fs.NArg() == 1:
 		path = "/bans"
+	case cmd == "flags" && fs.NArg() == 1:
+		path = "/flags"
+	case cmd == "scan" && fs.NArg() == 1:
+		method, path = http.MethodPost, "/scan"
+	case cmd == "suspend" && fs.NArg() == 2:
+		method, path = http.MethodPost, "/suspend"
+		q.Set("sub", linkName(arg))
+	case cmd == "unban-user" && fs.NArg() == 2:
+		method, path = http.MethodPost, "/unban-user"
+		q.Set("login", arg)
 	case cmd == "kill" && fs.NArg() == 2:
 		method, path = http.MethodPost, "/kill"
 		if net.ParseIP(arg) != nil {

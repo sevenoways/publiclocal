@@ -49,6 +49,7 @@ func runMCP(ctx context.Context, args []string) error {
 	return mcpserver.Run(ctx, mcpserver.Options{
 		Server:     *srv,
 		Token:      *token,
+		Account:    accountFor(*srv),
 		TLS:        *useTLS,
 		AllowPorts: ports,
 		MaxTunnels: *maxTunnels,

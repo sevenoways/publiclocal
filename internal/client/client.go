@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -23,11 +24,14 @@ type Tunnel struct {
 	Local      string // local address to forward to, e.g. "127.0.0.1:3000"
 	Subdomain  string // HTTP only; empty for a random one
 	RemotePort int    // TCP only; 0 for a random one
+
+	claim string // lets a reconnect take back the same link
 }
 
 type Config struct {
 	Server             string // host:port of the server's control port
-	Token              string
+	Token              string // server access token (private servers)
+	Account            string // login token from `publiclocal login`
 	TLS                bool
 	InsecureSkipVerify bool
 	Tunnels            []Tunnel
@@ -49,6 +53,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	cfg.Tunnels = slices.Clone(cfg.Tunnels) // runOnce records claims in it
 	backoff := time.Second
 	for {
 		connected, err := runOnce(ctx, cfg)
@@ -98,9 +103,9 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	hello := proto.Hello{Version: proto.Version, Token: cfg.Token}
+	hello := proto.Hello{Version: proto.Version, Token: cfg.Token, Account: cfg.Account}
 	for _, t := range cfg.Tunnels {
-		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort})
+		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.claim})
 	}
 	ctrl.SetDeadline(time.Now().Add(15 * time.Second))
 	if err := proto.Write(ctrl, hello); err != nil {
@@ -117,6 +122,12 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 		return false, errors.New("handshake: server returned wrong number of tunnels")
 	}
 	ctrl.SetDeadline(time.Time{})
+	for i, info := range resp.Tunnels {
+		if info.Claim != "" {
+			cfg.Tunnels[i].claim = info.Claim
+			cfg.Tunnels[i].Subdomain = info.Name
+		}
+	}
 	if cfg.OnReady != nil {
 		cfg.OnReady(resp.Tunnels)
 	}

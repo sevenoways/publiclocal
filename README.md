@@ -40,10 +40,10 @@ No account, no sign-up. Install, then:
 
 ```bash
 publiclocal http 3000
-# Forwarding https://3f9a1c2b7e.publiclocal.app -> 127.0.0.1:3000
+# Forwarding https://k7xq2m.publiclocal.app -> 127.0.0.1:3000
 ```
 
-With no `--server` set, the client uses `publiclocal.app`. Links there are **temporary** and meant for testing and demos: random names only, HTTP only, links expire after 2 hours, and browsers see a short warning page before your app. Webhooks, APIs and `curl` skip it. For anything permanent, run your own server (below); it takes two commands.
+With no `--server` set, the client uses `publiclocal.app`. Links there are **temporary** and meant for testing and demos: random names, HTTP only, and browsers see a short warning page before your app (webhooks, APIs and `curl` skip it). Links last **24 hours**, and keep the same address if your connection drops. Run `publiclocal login` (GitHub) to get **7-day links** that you can extend with `publiclocal extend`. For anything permanent, run your own server (below); it takes two commands.
 
 ## Run your own server
 
@@ -140,7 +140,7 @@ The client dials the server once and multiplexes that connection with [yamux](ht
 | `--public` | off | open-instance safeguards; see [docs/public-instance.md](docs/public-instance.md) |
 | `--warning` | off | browser warning page (always on with `--public`) |
 | `--abuse-contact` | | `mailto:` or `https:` link on the warning page (required with `--public`) |
-| `--max-tunnel-age`, `--max-per-ip`, `--rate`, `--max-transfer-mb` | public: 2h, 3, 600/min, 2048 | limits |
+| `--max-tunnel-age`, `--max-per-ip`, `--rate`, `--max-transfer-mb` | public: 24h, 3, 600/min, 2048 | limits |
 | `--admin` | `127.0.0.1:7001` | admin API for `publiclocal admin list/kill/ban` |
 | `--ban-file` | | persist banned IPs |
 

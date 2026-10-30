@@ -24,6 +24,7 @@ import (
 type Options struct {
 	Server     string // host:port of the tunnel server
 	Token      string
+	Account    string // login token from `publiclocal login`
 	TLS        bool
 	AllowPorts []int // if set, only these local ports may be shared
 	MaxTunnels int   // simultaneous tunnels; 0 means 5
@@ -34,7 +35,7 @@ type Options struct {
 const instructions = `PublicLocal makes a port on this computer reachable from the internet through a public HTTPS link.
 Use share_local_port when the user wants to share a local app, test webhooks or OAuth callbacks, or open their dev server on another device.
 Sharing exposes the app to anyone with the link, so only share ports the user asked for, and tell the user the URL you get back.
-On the free publiclocal.app server links are temporary (about 2 hours), names are random, browsers see a short notice first, and only HTTP is allowed.
+On the free publiclocal.app server links last 24 hours (7 days if the user has run "publiclocal login"), names are random, browsers see a short notice first, and only HTTP is allowed.
 Call stop_tunnel when the user is done.`
 
 // Run serves MCP over stdin/stdout until the client disconnects or ctx ends,
@@ -101,9 +102,10 @@ type ShareInput struct {
 }
 
 type ShareOutput struct {
-	ID   string `json:"id" jsonschema:"tunnel id, for stop_tunnel"`
-	URL  string `json:"url" jsonschema:"public URL to give the user"`
-	Note string `json:"note"`
+	ID      string    `json:"id" jsonschema:"tunnel id, for stop_tunnel"`
+	URL     string    `json:"url" jsonschema:"public URL to give the user"`
+	Expires time.Time `json:"expires,omitzero" jsonschema:"when the link stops working"`
+	Note    string    `json:"note"`
 }
 
 func (m *manager) share(_ context.Context, _ *mcp.CallToolRequest, in ShareInput) (*mcp.CallToolResult, ShareOutput, error) {
@@ -139,12 +141,13 @@ func (m *manager) share(_ context.Context, _ *mcp.CallToolRequest, in ShareInput
 	// The tunnel outlives this tool call and lives as long as the server.
 	tctx, cancel := context.WithCancel(m.ctx)
 	t.cancel = cancel
-	ready := make(chan string, 1)
+	ready := make(chan proto.TunnelInfo, 1)
 	done := make(chan error, 1)
 	go func() {
 		err := client.Run(tctx, client.Config{
 			Server:  m.opts.Server,
 			Token:   m.opts.Token,
+			Account: m.opts.Account,
 			TLS:     m.opts.TLS,
 			Tunnels: []client.Tunnel{{Type: in.Kind, Local: local, Subdomain: in.Subdomain}},
 			Logger:  m.opts.Logger,
@@ -153,7 +156,7 @@ func (m *manager) share(_ context.Context, _ *mcp.CallToolRequest, in ShareInput
 				t.URL = infos[0].URL // changes after a reconnect
 				m.mu.Unlock()
 				select {
-				case ready <- infos[0].URL:
+				case ready <- infos[0]:
 				default:
 				}
 			},
@@ -163,11 +166,11 @@ func (m *manager) share(_ context.Context, _ *mcp.CallToolRequest, in ShareInput
 	}()
 
 	select {
-	case url := <-ready:
+	case info := <-ready:
 		m.mu.Lock()
 		m.tunnels[t.ID] = t
 		m.mu.Unlock()
-		out = ShareOutput{ID: t.ID, URL: url, Note: "Share this URL with the user. It forwards to " + local + " until stop_tunnel is called or this session ends."}
+		out = ShareOutput{ID: t.ID, URL: info.URL, Expires: info.Expires, Note: "Share this URL with the user. It forwards to " + local + " until stop_tunnel is called, this session ends, or the link expires."}
 		return nil, out, nil
 	case err := <-done:
 		cancel()

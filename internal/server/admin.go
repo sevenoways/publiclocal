@@ -14,6 +14,7 @@ import (
 // TunnelStatus describes one connected client for the admin API.
 type TunnelStatus struct {
 	IP      string    `json:"ip"`
+	Account string    `json:"account,omitempty"`
 	URLs    []string  `json:"urls"`
 	Created time.Time `json:"created"`
 	Bytes   int64     `json:"bytes"`
@@ -28,6 +29,10 @@ type TunnelStatus struct {
 //	POST /ban?ip=ADDR      ban an IP and close its sessions
 //	POST /unban?ip=ADDR    lift a ban
 //	GET  /bans             list banned IPs
+//	GET  /flags            links the misuse checker flagged
+//	POST /scan             run the misuse checker now
+//	POST /suspend?sub=NAME remove a link and ban its IP and account
+//	POST /unban-user?login=NAME
 func (s *Server) AdminHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /tunnels", func(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +68,39 @@ func (s *Server) AdminHandler() http.Handler {
 		}
 		writeJSON(w, map[string]int{"closed": s.Kill("", ip)})
 	})
+	mux.HandleFunc("GET /flags", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, s.Flags())
+	})
+	mux.HandleFunc("POST /scan", func(w http.ResponseWriter, r *http.Request) {
+		flags := s.ScanNow()
+		if flags == nil {
+			flags = []*Flag{}
+		}
+		writeJSON(w, flags)
+	})
+	mux.HandleFunc("POST /suspend", func(w http.ResponseWriter, r *http.Request) {
+		ip, login, ok := s.Suspend(r.URL.Query().Get("sub"))
+		if !ok {
+			http.Error(w, "no such link", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, map[string]string{"banned_ip": ip, "banned_account": login})
+	})
+	mux.HandleFunc("POST /unban-user", func(w http.ResponseWriter, r *http.Request) {
+		login := r.URL.Query().Get("login")
+		s.mu.Lock()
+		a := s.accounts[login]
+		if a != nil {
+			a.Banned = false
+			s.saveLocked()
+		}
+		s.mu.Unlock()
+		if a == nil {
+			http.Error(w, "no such account", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
 	mux.HandleFunc("POST /unban", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Unban(r.URL.Query().Get("ip")); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -85,7 +123,7 @@ func (s *Server) Tunnels() []TunnelStatus {
 	s.mu.RLock()
 	out := make([]TunnelStatus, 0, len(s.sessions))
 	for sess := range s.sessions {
-		out = append(out, TunnelStatus{IP: sess.ip, URLs: sess.urls, Created: sess.created, Bytes: sess.bytes.Load()})
+		out = append(out, TunnelStatus{IP: sess.ip, Account: sess.account, URLs: sess.urls, Created: sess.created, Bytes: sess.bytes.Load()})
 	}
 	s.mu.RUnlock()
 	slices.SortFunc(out, func(a, b TunnelStatus) int { return a.Created.Compare(b.Created) })

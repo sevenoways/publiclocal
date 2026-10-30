@@ -29,13 +29,17 @@ const usage = `publiclocal - make localhost public
 Usage:
   publiclocal http    [flags] <port|host:port>              expose a local HTTP service
   publiclocal tcp     [flags] <port|host:port>              expose a local TCP service (own server only)
+  publiclocal login                                        sign in with GitHub for 7-day links
+  publiclocal links                                         your links and when they expire
+  publiclocal extend  <link>                                give a link another 7 days
+  publiclocal logout
+  publiclocal mcp     [flags]                               MCP server for AI assistants (Claude, Cursor, Codex...)
   publiclocal server  --domain tunnel.example.com [flags]   run your own server
-  publiclocal mcp     [flags]                               MCP server for AI assistants (Claude, ChatGPT, Cursor...)
-  publiclocal admin   list | kill <sub|ip> | ban <ip> | unban <ip> | bans
+  publiclocal admin   list | flags | scan | suspend <sub> | kill <sub|ip> | ban <ip> | unban <ip> | bans
   publiclocal version
 
 Without --server (or PUBLICLOCAL_SERVER) clients use the free public server
-at publiclocal.app, where links are temporary.
+at publiclocal.app. Links there last 24 hours, or 7 days when signed in.
 
 Run "publiclocal <command> -h" for the flags of each command.
 `
@@ -58,6 +62,14 @@ func main() {
 		err = runAdmin(os.Args[2:])
 	case "mcp":
 		err = runMCP(ctx, os.Args[2:])
+	case "login":
+		err = runLogin(ctx, os.Args[2:])
+	case "logout":
+		err = runLogout(os.Args[2:])
+	case "links":
+		err = runLinks(os.Args[2:])
+	case "extend":
+		err = runExtend(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("publiclocal", version)
 	case "help", "-h", "--help":
@@ -87,7 +99,12 @@ func runServer(ctx context.Context, args []string) error {
 	public := fs.Bool("public", false, "run as an open public instance: random subdomains only, no TCP, warning page, limits")
 	warning := fs.Bool("warning", false, "show the browser warning page (always on with --public)")
 	abuse := fs.String("abuse-contact", "", "mailto: or https: link for abuse reports, shown on the warning page")
-	maxAge := fs.Duration("max-tunnel-age", 0, "close sessions after this long, e.g. 2h (public default 2h)")
+	maxAge := fs.Duration("max-tunnel-age", 0, "links expire this long after creation, e.g. 24h (public default 24h; 0 = never)")
+	accountAge := fs.Duration("account-tunnel-age", 0, "link lifetime for signed-in users and per `extend` (public default 168h)")
+	stateFile := fs.String("state-file", "", "file that keeps links and accounts across restarts")
+	ghID := fs.String("github-client-id", os.Getenv("GITHUB_CLIENT_ID"), "GitHub OAuth app client ID; enables `publiclocal login` (env GITHUB_CLIENT_ID)")
+	ghSecret := fs.String("github-client-secret", os.Getenv("GITHUB_CLIENT_SECRET"), "GitHub OAuth app client secret (env GITHUB_CLIENT_SECRET)")
+	scanEvery := fs.Duration("scan-interval", 0, "check random live links for phishing this often (public default 10m)")
 	perIP := fs.Int("max-per-ip", 0, "max simultaneous sessions per client IP (public default 3)")
 	rpm := fs.Int("rate", 0, "max requests per minute per HTTP tunnel (public default 600)")
 	maxMB := fs.Int64("max-transfer-mb", 0, "max traffic per session in MB (public default 2048)")
@@ -118,6 +135,11 @@ func runServer(ctx context.Context, args []string) error {
 		Warning:            *warning,
 		AbuseContact:       *abuse,
 		MaxTunnelAge:       *maxAge,
+		AccountTunnelAge:   *accountAge,
+		StateFile:          *stateFile,
+		GitHubClientID:     *ghID,
+		GitHubClientSecret: *ghSecret,
+		ScanInterval:       *scanEvery,
 		MaxSessionsPerIP:   *perIP,
 		RequestsPerMinute:  *rpm,
 		MaxBytesPerSession: *maxMB << 20,
@@ -172,16 +194,33 @@ func runClient(ctx context.Context, kind string, args []string) error {
 		t.RemotePort = *remotePort
 	}
 	log := newLogger(*debug)
+	account := accountFor(*srv)
+	last := ""
 	return client.Run(ctx, client.Config{
 		Server:             *srv,
 		Token:              *token,
+		Account:            account,
 		TLS:                *useTLS,
 		InsecureSkipVerify: *insecure,
 		Tunnels:            []client.Tunnel{t},
 		Logger:             log,
 		OnReady: func(infos []proto.TunnelInfo) {
 			for _, i := range infos {
+				if i.URL == last {
+					fmt.Println("Reconnected, same link")
+					continue
+				}
+				last = i.URL
 				fmt.Printf("Forwarding %s -> %s\n", i.URL, local)
+				if !i.Expires.IsZero() {
+					hint := ""
+					if account == "" {
+						hint = "; run `publiclocal login` for 7-day links"
+					} else if i.Type == proto.TypeHTTP {
+						hint = "; extend with `publiclocal extend " + i.Name + "`"
+					}
+					fmt.Printf("Link %s%s\n", expiryText(i.Expires), hint)
+				}
 			}
 		},
 	})
