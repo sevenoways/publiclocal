@@ -82,11 +82,6 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--m
 footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
 footer a { color: var(--muted); }
 
-.consent { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 10; max-width: 720px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
-.consent-actions { display: flex; gap: 8px; }
-.consent button { font: inherit; font-size: 14px; font-weight: 600; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); cursor: pointer; }
-.consent button.quiet { background: transparent; color: var(--fg); border-color: var(--line); }
-
 .prose { max-width: 720px; }
 .prose h1 { font-size: 34px; margin: 48px 0 8px; }
 .prose h2 { font-size: 21px; margin: 32px 0 8px; }
