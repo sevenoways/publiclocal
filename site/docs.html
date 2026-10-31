@@ -32,7 +32,7 @@
   <h1>Documentation</h1>
   <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 30 October 2026 · v1.0</span></p>
   <nav class="toc" aria-label="On this page">
-    <a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
 
   <h2 id="install">Install</h2>
@@ -49,6 +49,24 @@ docker run --rm --network host ghcr.io/sevenoways/publiclocal http 3000
 <span class="dim"># Go</span>
 go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest</pre>
   <p>Both installers download the build for your system from <a href="https://github.com/sevenoways/publiclocal/releases/latest">GitHub Releases</a> and verify its SHA-256 checksum before installing. Run the same command again to update.</p>
+
+  <h2 id="ssh">No install: use SSH</h2>
+  <p>If you have an SSH client, and every Mac, Linux machine and Windows 10 or newer does, you don't need to install anything:</p>
+<pre class="block"><span class="dim">$</span> ssh -p 443 -R0:localhost:3000 publiclocal.app
+
+  PublicLocal  ·  https://publiclocal.app
+  Forwarding  <span class="url">https://k7xq2m.publiclocal.app</span>
+  Link valid until Sat 1 Nov 18:30 UTC, or until you disconnect
+
+  Requests appear below. Press Ctrl+C to stop.
+  18:31:02  GET    /                                        200    14 ms  203.0.113.7</pre>
+  <ul>
+    <li>Change <code>3000</code> to your app's port. Several <code>-R</code> options give several links.</li>
+    <li>Port 443 gets through almost any firewall. The first time, SSH asks you to confirm the server's key; check it matches the fingerprint below.</li>
+    <li>Add <code>-o ServerAliveInterval=30</code> on flaky networks, and <code>-T</code> if you don't want a terminal.</li>
+    <li>SSH links are anonymous and end when you disconnect. For passwords, <code>--max-visits</code>, the inspector, file sharing and links that survive restarts, install the client.</li>
+  </ul>
+  <p>Server key fingerprint: <code id="ssh-fp">shown after the next deploy</code></p>
 
   <h2 id="quick-start">Quick start</h2>
   <p>Start your app, then share its port:</p>

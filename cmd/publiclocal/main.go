@@ -115,6 +115,8 @@ func runServer(ctx context.Context, args []string) error {
 	maxMB := fs.Int64("max-transfer-mb", 0, "max traffic per session in MB (public default 2048)")
 	banFile := fs.String("ban-file", "", "file of banned client IPs, one per line")
 	siteDir := fs.String("site-dir", "", "static files to serve as the homepage on the bare domain")
+	sshAddr := fs.String("ssh", "", "also accept SSH tunnels (ssh -R0:localhost:3000 <domain>) on this address, e.g. :2222")
+	sshOnHTTPS := fs.Bool("ssh-on-https", false, "also accept SSH tunnels on the HTTPS port, so `ssh -p 443` works through firewalls")
 	debug := fs.Bool("debug", false, "verbose logging")
 	fs.Parse(args)
 
@@ -154,6 +156,8 @@ func runServer(ctx context.Context, args []string) error {
 		MaxBytesPerSession: *maxMB << 20,
 		BanFile:            *banFile,
 		SiteDir:            *siteDir,
+		SSHAddr:            *sshAddr,
+		SSHOnHTTPS:         *sshOnHTTPS,
 		Logger:             newLogger(*debug),
 	}
 	if *public && *abuse == "" {

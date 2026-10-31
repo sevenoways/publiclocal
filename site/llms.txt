@@ -3,6 +3,7 @@
 > PublicLocal is an open-source (MIT) reverse tunnel that gives a web server on your own computer a public HTTPS URL in one command: `publiclocal http 3000`. It is an alternative to ngrok. There is a free hosted server at publiclocal.app (no account; links last 24 hours, or 7 days with GitHub sign-in) and the same single Go binary can run as your own server on your own domain with no limits.
 
 Key facts:
+- No install needed: `ssh -p 443 -R0:localhost:3000 publiclocal.app` opens a tunnel with any SSH client; the link and a live request feed appear in the SSH window, Ctrl+C ends it. SSH links are anonymous and end on disconnect.
 - Install: `curl -fsSL https://publiclocal.app/install.sh | sh` (Linux/macOS), `irm https://publiclocal.app/install.ps1 | iex` (Windows PowerShell), Docker image `ghcr.io/sevenoways/publiclocal`, or `go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest`.
 - Usage: `publiclocal http <port>` prints a public https:// link forwarding to localhost:<port>. Press Ctrl+C to stop.
 - Free server: random 6–8 character names (e.g. k7xq2m.publiclocal.app), HTTP/HTTPS only, links keep the same address across reconnects and client restarts, browsers see a short "temporary developer link" notice before tunnel content (APIs, webhooks and curl skip it), fair-use limits, abuse contact abuse@publiclocal.app.

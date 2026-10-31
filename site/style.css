@@ -101,8 +101,8 @@ pre { max-width: 100%; }
 .tab-panel .row { display: flex; align-items: center; gap: 12px; background: var(--code-bg); color: var(--code-fg); border-radius: 10px; padding: 12px 14px; }
 .tab-panel code { flex: 1; font-size: 14.5px; overflow-x: auto; white-space: nowrap; }
 .tab-panel p { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
-#t1:checked ~ .tab-labels label[for=t1], #t2:checked ~ .tab-labels label[for=t2], #t3:checked ~ .tab-labels label[for=t3], #t4:checked ~ .tab-labels label[for=t4] { color: var(--accent); border-bottom-color: var(--accent); }
-#t1:checked ~ .p1, #t2:checked ~ .p2, #t3:checked ~ .p3, #t4:checked ~ .p4 { display: block; }
+#t0:checked ~ .tab-labels label[for=t0], #t1:checked ~ .tab-labels label[for=t1], #t2:checked ~ .tab-labels label[for=t2], #t3:checked ~ .tab-labels label[for=t3], #t4:checked ~ .tab-labels label[for=t4] { color: var(--accent); border-bottom-color: var(--accent); }
+#t0:checked ~ .p0, #t1:checked ~ .p1, #t2:checked ~ .p2, #t3:checked ~ .p3, #t4:checked ~ .p4 { display: block; }
 .copy { flex: none; font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(255, 255, 255, .06); color: var(--code-fg); cursor: pointer; }
 .copy:hover { background: rgba(255, 255, 255, .12); }
 

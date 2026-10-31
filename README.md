@@ -27,6 +27,7 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **Token authentication** and an encrypted (TLS) control channel
 - **Auto-reconnect** with backoff when the network drops
 - **Single static binary** for Linux, macOS, Windows and FreeBSD (amd64/arm64), plus a Docker image
+- **Zero-install SSH tunnels**: `ssh -p 443 -R0:localhost:3000 publiclocal.app`, nothing to download
 - **Live request feed** in your terminal, and a **local inspector** at `localhost:4040` with headers, bodies and **webhook replay**
 - **Share a folder or file** with `publiclocal share ./build`, no web server needed
 - **Password-protected links** (`--password`), enforced before anything reaches your app, free server included
@@ -41,6 +42,14 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **MIT licensed**, small and readable Go
 
 ## Try it on the free public server
+
+**Nothing to install:** if you have SSH (every Mac, Linux box and Windows 10+ does), this is the whole thing:
+
+```bash
+ssh -p 443 -R0:localhost:3000 publiclocal.app
+```
+
+The link and a live request feed appear in the SSH window; Ctrl+C ends it. For passwords, the inspector, file sharing and links that survive restarts, install the client.
 
 No account, no sign-up. Install, then:
 
@@ -154,6 +163,7 @@ The client dials the server once and multiplexes that connection with [yamux](ht
 | `--max-tunnel-age`, `--max-per-ip`, `--rate`, `--max-transfer-mb` | public: 24h, 3, 600/min, 2048 | limits |
 | `--admin` | `127.0.0.1:7001` | admin API for `publiclocal admin list/kill/ban` |
 | `--ban-file` | | persist banned IPs |
+| `--ssh`, `--ssh-on-https` | off | accept `ssh -R` tunnels on a port (e.g. `:2222`) and/or on the HTTPS port |
 | `--state-file` | | keep links and accounts across restarts |
 | `--github-client-id`, `--github-client-secret` | `$GITHUB_CLIENT_ID`, `$GITHUB_CLIENT_SECRET` | enable `publiclocal login` |
 | `--max-links-per-ip`, `--max-links-per-account`, `--connects-per-minute` | public: 10, 50, 30 | abuse limits |

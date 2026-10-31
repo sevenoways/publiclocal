@@ -250,7 +250,7 @@ func (s *Server) expire(r *reservation) {
 	s.mu.Unlock()
 	if rt != nil {
 		rt.sess.log.Info("link expired", "sub", r.Sub)
-		rt.sess.ys.Close()
+		rt.sess.tr.close()
 	}
 }
 

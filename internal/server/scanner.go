@@ -173,7 +173,7 @@ func (s *Server) Suspend(sub string) (ip, login string, ok bool) {
 		s.Ban(ip)
 	}
 	for _, v := range victims {
-		v.ys.Close()
+		v.tr.close()
 	}
 	s.log.Warn("link suspended", "sub", sub, "ip", ip, "account", login, "sessions_closed", len(victims))
 	return ip, login, true

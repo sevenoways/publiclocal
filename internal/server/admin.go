@@ -199,7 +199,7 @@ func (s *Server) Forget(sub string) bool {
 	s.mu.Unlock()
 	if rt != nil {
 		rt.sess.log.Info("link removed by admin", "sub", sub)
-		rt.sess.ys.Close()
+		rt.sess.tr.close()
 	}
 	return true
 }
@@ -234,7 +234,7 @@ func (s *Server) Kill(sub, ip string) int {
 	s.mu.RUnlock()
 	for _, sess := range victims {
 		sess.log.Info("session killed by admin")
-		sess.ys.Close()
+		sess.tr.close()
 	}
 	return len(victims)
 }

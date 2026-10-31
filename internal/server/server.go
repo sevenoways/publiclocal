@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/sevenoways/publiclocal/internal/pipe"
 	"github.com/sevenoways/publiclocal/internal/proto"
@@ -83,6 +85,13 @@ type Config struct {
 	// StateFile keeps links and accounts across restarts; empty keeps them in memory.
 	StateFile string
 
+	// SSH tunnels: `ssh -R0:localhost:3000 <domain>` with no client install.
+	// SSHAddr is a dedicated port (e.g. ":2222"); SSHOnHTTPS also accepts SSH
+	// on the HTTPS port, so `ssh -p 443` works through strict firewalls.
+	SSHAddr        string
+	SSHOnHTTPS     bool
+	SSHHostKeyFile string // default <CertDir>/ssh_host_ed25519_key
+
 	// Random link names are between NameMinLen and NameMaxLen characters.
 	NameMinLen, NameMaxLen int
 
@@ -137,6 +146,24 @@ type Server struct {
 	dirty      chan struct{} // state changed, save soon
 	connLimit  *rateLimiter  // control connections per client network
 	loginLimit *rateLimiter  // login starts per client network
+	sshKey     ssh.Signer    // host key for SSH tunnels; nil when SSH is off
+}
+
+// EnableSSH loads (or creates) the SSH host key. ListenAndServe calls it
+// when SSH is configured; tests call it before ServeSSH.
+func (s *Server) EnableSSH() (fingerprint string, err error) {
+	path := s.cfg.SSHHostKeyFile
+	if path == "" {
+		dir := s.cfg.CertDir
+		if dir == "" {
+			dir = "."
+		}
+		path = filepath.Join(dir, "ssh_host_ed25519_key")
+	}
+	if s.sshKey, err = SSHHostKey(path, s.log.Warn); err != nil {
+		return "", err
+	}
+	return ssh.FingerprintSHA256(s.sshKey.PublicKey()), nil
 }
 
 type route struct {
@@ -321,11 +348,37 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		go func() { errc <- hs.ListenAndServe() }()
 		s.log.Info("http listening", "addr", s.cfg.HTTPAddr)
 	}
+	if s.cfg.SSHAddr != "" || (s.cfg.SSHOnHTTPS && tlsCfg != nil) {
+		fp, err := s.EnableSSH()
+		if err != nil {
+			return fmt.Errorf("ssh host key: %w", err)
+		}
+		s.log.Info("ssh host key", "fingerprint", fp)
+	}
 	if tlsCfg != nil {
 		hs := &http.Server{Addr: s.cfg.HTTPSAddr, Handler: s, TLSConfig: tlsCfg, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 		closers = append(closers, hs)
-		go func() { errc <- hs.ListenAndServeTLS("", "") }()
-		s.log.Info("https listening", "addr", s.cfg.HTTPSAddr)
+		if s.cfg.SSHOnHTTPS {
+			ln, err := net.Listen("tcp", s.cfg.HTTPSAddr)
+			if err != nil {
+				return err
+			}
+			mux := s.newSSHMux(ln)
+			go func() { errc <- hs.ServeTLS(mux, "", "") }()
+			s.log.Info("https listening", "addr", s.cfg.HTTPSAddr, "ssh", true)
+		} else {
+			go func() { errc <- hs.ListenAndServeTLS("", "") }()
+			s.log.Info("https listening", "addr", s.cfg.HTTPSAddr)
+		}
+	}
+	if s.cfg.SSHAddr != "" {
+		ln, err := net.Listen("tcp", s.cfg.SSHAddr)
+		if err != nil {
+			return err
+		}
+		closers = append(closers, ln)
+		go func() { errc <- s.ServeSSH(ln) }()
+		s.log.Info("ssh listening", "addr", s.cfg.SSHAddr)
 	}
 	if s.cfg.AdminAddr != "" {
 		hs := &http.Server{Addr: s.cfg.AdminAddr, Handler: s.AdminHandler(), ReadHeaderTimeout: 30 * time.Second}
@@ -505,7 +558,7 @@ var subdomainRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 // session is one connected client and the tunnels it holds.
 type session struct {
 	srv       *Server
-	ys        *yamux.Session
+	tr        transport // how streams reach the client: yamux or SSH
 	log       *slog.Logger
 	ip        string
 	ipKey     string // see ipKey()
@@ -539,7 +592,7 @@ func (sess *session) pumpEvents(ctrl net.Conn) {
 			if proto.Write(ctrl, ev) != nil {
 				return
 			}
-		case <-sess.ys.CloseChan():
+		case <-sess.tr.done():
 			return
 		}
 	}
@@ -557,7 +610,7 @@ func (s *Server) handleSession(conn net.Conn) {
 	}
 	defer ys.Close()
 
-	sess := &session{srv: s, ys: ys, log: log, ip: ip, ipKey: ipKey(ip), created: time.Now()}
+	sess := &session{srv: s, tr: yamuxTransport{ys}, log: log, ip: ip, ipKey: ipKey(ip), created: time.Now()}
 	defer sess.release()
 
 	ctrl, err := acceptTimeout(ys, 10*time.Second)
@@ -750,7 +803,7 @@ func (sess *session) addHTTP(idx int, t proto.TunnelReq) (proto.TunnelInfo, erro
 	if res != nil {
 		if old := s.hosts[sub]; old != nil && old.sess != sess {
 			// The previous connection is gone but not yet noticed; replace it.
-			go old.sess.ys.Close()
+			go old.sess.tr.close()
 		}
 		if res.Account == "" && sess.account != "" {
 			res.Account = sess.account
@@ -896,13 +949,34 @@ func (sess *session) serveTCP(idx int, ln net.Listener) {
 	}
 }
 
-func (sess *session) openStream(idx int, remote string) (net.Conn, error) {
-	st, err := sess.ys.Open()
+// transport carries a session's streams to its client: the publiclocal
+// client over yamux, or a plain SSH client using remote forwarding.
+type transport interface {
+	open(idx int, remote string) (net.Conn, error)
+	close() error
+	done() <-chan struct{}
+}
+
+type yamuxTransport struct{ ys *yamux.Session }
+
+func (t yamuxTransport) open(idx int, remote string) (net.Conn, error) {
+	st, err := t.ys.Open()
 	if err != nil {
 		return nil, err
 	}
 	if err := proto.Write(st, proto.StreamHeader{Tunnel: idx, RemoteAddr: remote}); err != nil {
 		st.Close()
+		return nil, err
+	}
+	return st, nil
+}
+
+func (t yamuxTransport) close() error          { return t.ys.Close() }
+func (t yamuxTransport) done() <-chan struct{} { return t.ys.CloseChan() }
+
+func (sess *session) openStream(idx int, remote string) (net.Conn, error) {
+	st, err := sess.tr.open(idx, remote)
+	if err != nil {
 		return nil, err
 	}
 	if sess.srv.cfg.MaxBytesPerSession > 0 {
@@ -933,7 +1007,7 @@ func (c *countingConn) Write(p []byte) (int, error) {
 func (sess *session) addBytes(n int) {
 	if sess.bytes.Add(int64(n)) > sess.srv.cfg.MaxBytesPerSession && sess.overLimit.CompareAndSwap(false, true) {
 		sess.log.Info("traffic limit reached, closing session", "limit", sess.srv.cfg.MaxBytesPerSession)
-		go sess.ys.Close()
+		go sess.tr.close()
 	}
 }
 
