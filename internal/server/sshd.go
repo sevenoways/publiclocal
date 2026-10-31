@@ -330,10 +330,17 @@ func (s *Server) handleSSH(c net.Conn) {
 	defer s.retireSSH(sess)
 	defer sess.release()
 	log.Info("ssh session open")
+	if u := conn.User(); strings.Contains(u, "=") && len(s.cfg.Tokens) == 0 {
+		if summary, err := s.applySSHOptions(sess, strings.Split(u, "+")); err != nil {
+			out.say("  Options not applied: "+err.Error(), "")
+		} else if summary != "" {
+			out.say("  Options: "+summary, "")
+		}
+	}
 
 	go s.sshKeepalive(conn, tr)
 	go s.sshFeed(sess, out)
-	go s.sshChannels(chans, out, tr)
+	go s.sshChannels(chans, out, tr, sess)
 
 	for req := range reqs {
 		switch req.Type {
@@ -348,6 +355,73 @@ func (s *Server) handleSSH(c net.Conn) {
 		}
 	}
 	log.Info("ssh session closed", "bytes", sess.bytes.Load())
+}
+
+// sshOptSet holds options an SSH user gave, for links made later in the session.
+type sshOptSet struct {
+	req     proto.TunnelReq
+	expires time.Duration
+}
+
+// applySSHOptions parses `name=value` words and applies them to the
+// session's links, now and later. It returns a summary for the SSH window.
+func (s *Server) applySSHOptions(sess *session, words []string) (string, error) {
+	t, expires, err := sshOptions(words)
+	if err != nil {
+		return "", err
+	}
+	opts, err := s.parseLinkOpts(t)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	sess.sshOpts = &sshOptSet{req: t, expires: expires}
+	for _, sub := range sess.subs {
+		if rt := s.hosts[sub]; rt != nil && rt.sess == sess {
+			rt.opts.Store(opts)
+		}
+		s.shortenLocked(sub, expires)
+	}
+	s.saveLocked()
+	s.mu.Unlock()
+	var parts []string
+	if opts.password != "" {
+		parts = append(parts, "password set")
+	}
+	if expires > 0 {
+		parts = append(parts, "expires in "+expires.String())
+	}
+	if opts.maxVisit > 0 {
+		parts = append(parts, fmt.Sprintf("first %d visitor(s) only", opts.maxVisit))
+	}
+	if opts.hostHeader != "" {
+		parts = append(parts, "Host header "+opts.hostHeader)
+	}
+	if len(opts.allowNets) > 0 {
+		parts = append(parts, fmt.Sprintf("%d allowed network(s)", len(opts.allowNets)))
+	}
+	if opts.needsGitHub {
+		parts = append(parts, "GitHub sign-in required")
+	}
+	if opts.note != "" {
+		parts = append(parts, "note shown to visitors")
+	}
+	return strings.Join(parts, ", "), nil
+}
+
+// shortenLocked brings a link's expiry forward, never later. Callers hold s.mu.
+func (s *Server) shortenLocked(sub string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	res := s.reservations[sub]
+	if res == nil {
+		return
+	}
+	if want := time.Now().Add(d); res.Expires.IsZero() || want.Before(res.Expires) {
+		res.Expires = want
+		s.scheduleExpiry(res)
+	}
 }
 
 // sshForward turns one `-R` request into a link.
@@ -381,7 +455,16 @@ func (s *Server) sshForward(req *ssh.Request, sess *session, tr *sshTransport, o
 	tr.mu.Lock()
 	tr.fwd = append(tr.fwd, sshForward{addr: r.Addr, port: port})
 	tr.mu.Unlock()
-	info, err := sess.addHTTP(idx, proto.TunnelReq{Type: proto.TypeHTTP, Subdomain: want})
+	treq := proto.TunnelReq{Type: proto.TypeHTTP, Subdomain: want}
+	var expires time.Duration
+	s.mu.RLock()
+	if o := sess.sshOpts; o != nil {
+		saved := o.req
+		saved.Type, saved.Subdomain = proto.TypeHTTP, want
+		treq, expires = saved, o.expires
+	}
+	s.mu.RUnlock()
+	info, err := sess.addHTTP(idx, treq)
 	if err != nil {
 		tr.mu.Lock()
 		tr.fwd = tr.fwd[:idx]
@@ -392,6 +475,10 @@ func (s *Server) sshForward(req *ssh.Request, sess *session, tr *sshTransport, o
 	}
 	s.mu.Lock()
 	sess.urls = append(sess.urls, info.URL)
+	s.shortenLocked(info.Name, expires)
+	if res := s.reservations[info.Name]; res != nil {
+		info.Expires = res.Expires
+	}
 	s.mu.Unlock()
 	var reply []byte
 	if r.Port == 0 {
@@ -413,7 +500,7 @@ func (s *Server) sshForward(req *ssh.Request, sess *session, tr *sshTransport, o
 
 // sshChannels serves one session channel (where text is shown) and refuses
 // everything else, including further session channels.
-func (s *Server) sshChannels(chans <-chan ssh.NewChannel, out *sshOut, tr *sshTransport) {
+func (s *Server) sshChannels(chans <-chan ssh.NewChannel, out *sshOut, tr *sshTransport, sess *session) {
 	var opened atomic.Bool
 	for nc := range chans {
 		if nc.ChannelType() != "session" {
@@ -430,6 +517,18 @@ func (s *Server) sshChannels(chans <-chan ssh.NewChannel, out *sshOut, tr *sshTr
 		}
 		go func() {
 			for r := range reqs {
+				if r.Type == "exec" {
+					var cmd struct{ Command string }
+					if ssh.Unmarshal(r.Payload, &cmd) == nil && len(cmd.Command) <= 2048 {
+						if words := strings.Fields(cmd.Command); len(words) > 0 {
+							if summary, err := s.applySSHOptions(sess, words); err != nil {
+								out.say("  Options not applied: "+printable(err.Error(), 200), "")
+							} else if summary != "" {
+								out.say("  Options: "+summary, "")
+							}
+						}
+					}
+				}
 				switch r.Type {
 				case "pty-req", "shell", "exec", "env", "window-change":
 					if r.WantReply {

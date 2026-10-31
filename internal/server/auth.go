@@ -61,7 +61,7 @@ func (s *Server) loginEnabled() bool { return s.cfg.GitHubClientID != "" }
 // It reports whether it handled the request.
 func (s *Server) serveAccountAPI(w http.ResponseWriter, r *http.Request) bool {
 	switch r.URL.Path {
-	case "/api/login/start", "/api/login/poll", "/login", "/auth/callback", "/api/me", "/api/extend", "/api/logout":
+	case "/api/login/start", "/api/login/poll", "/login", "/auth/callback", "/api/me", "/api/extend", "/api/logout", "/visitor-login":
 	default:
 		return false
 	}
@@ -82,7 +82,13 @@ func (s *Server) serveAccountAPI(w http.ResponseWriter, r *http.Request) bool {
 			s.loginPage(w, r)
 		}
 	case "/auth/callback":
-		s.loginCallback(w, r)
+		if st := r.URL.Query().Get("state"); strings.HasPrefix(st, "v") {
+			s.visitorCallback(w, r, st, r.URL.Query().Get("code"))
+		} else {
+			s.loginCallback(w, r)
+		}
+	case "/visitor-login":
+		s.visitorLogin(w, r)
 	case "/api/me":
 		s.me(w, r)
 	case "/api/extend":
@@ -392,6 +398,15 @@ type githubUser struct {
 // are requested: only public profile information is read, and the GitHub
 // access token is discarded afterwards.
 func (s *Server) githubUser(ctx context.Context, code string) (*githubUser, error) {
+	token, err := s.githubToken(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	return s.githubUserFor(ctx, token)
+}
+
+// githubToken exchanges an OAuth code for an access token.
+func (s *Server) githubToken(ctx context.Context, code string) (string, error) {
 	form := url.Values{
 		"client_id":     {s.cfg.GitHubClientID},
 		"client_secret": {s.cfg.GitHubClientSecret},
@@ -403,7 +418,7 @@ func (s *Server) githubUser(ctx context.Context, code string) (*githubUser, erro
 	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	var tok struct {
 		AccessToken string `json:"access_token"`
@@ -412,16 +427,20 @@ func (s *Server) githubUser(ctx context.Context, code string) (*githubUser, erro
 	err = json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&tok)
 	resp.Body.Close()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if tok.AccessToken == "" {
-		return nil, fmt.Errorf("no access token: %s", tok.Error)
+		return "", fmt.Errorf("no access token: %s", tok.Error)
 	}
+	return tok.AccessToken, nil
+}
 
-	req, _ = http.NewRequestWithContext(ctx, "GET", s.cfg.GitHubAPIURL+"/user", nil)
-	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+// githubUserFor reads the user a token belongs to. The token is not kept.
+func (s *Server) githubUserFor(ctx context.Context, token string) (*githubUser, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", s.cfg.GitHubAPIURL+"/user", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err = http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -437,6 +456,20 @@ func (s *Server) githubUser(ctx context.Context, code string) (*githubUser, erro
 		return nil, errors.New("github returned no login")
 	}
 	return &u, nil
+}
+
+// githubIsMember checks, with the user's own token, whether they belong to
+// an organisation (private memberships need the read:org scope).
+func (s *Server) githubIsMember(ctx context.Context, token, org, login string) bool {
+	req, _ := http.NewRequestWithContext(ctx, "GET", s.cfg.GitHubAPIURL+"/orgs/"+url.PathEscape(org)+"/members/"+url.PathEscape(login), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusNoContent
 }
 
 var confirmTmpl = template.Must(template.New("confirm").Parse(`<!doctype html>

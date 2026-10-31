@@ -55,7 +55,9 @@
     <tr><td>Automatic certificates</td><td class="y">Let's Encrypt, or one wildcard via Cloudflare DNS</td><td class="y">Managed</td></tr>
     <tr><td>WebSockets, streaming</td><td class="y">Yes</td><td class="y">Yes</td></tr>
     <tr><td>Traffic inspector</td><td class="y">Terminal feed plus a local inspector with webhook replay</td><td class="y">Web dashboard with replay</td></tr>
-    <tr><td>Auth in front of tunnels</td><td class="y">Password-protected links, free</td><td class="y">OAuth, basic auth, IP rules (paid)</td></tr>
+    <tr><td>Auth in front of tunnels</td><td class="y">Password, GitHub sign-in (users and orgs), IP allowlist, free</td><td class="y">OAuth, basic auth, IP rules (paid)</td></tr>
+    <tr><td>Webhook inbox (no app running)</td><td class="y"><code>publiclocal catch</code> + replay later</td><td class="n">No</td></tr>
+    <tr><td>Host header rewrite</td><td class="y"><code>--host-header</code></td><td class="y"><code>--host-header</code></td></tr>
     <tr><td>QR code for phones</td><td class="y"><code>--qr</code></td><td class="n">No</td></tr>
     <tr><td>Expired-link pages with stats</td><td class="y">Yes</td><td class="n">No</td></tr>
     <tr><td>No-install option</td><td class="y"><code>ssh -p 443 -R0:localhost:3000 publiclocal.app</code></td><td class="n">Agent required</td></tr>

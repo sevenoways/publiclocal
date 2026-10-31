@@ -6,10 +6,17 @@ package inspect
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,9 +59,68 @@ type Store struct {
 	entries []*Entry
 	next    int
 	limit   int
+	inbox   *os.File // when set, every entry is also appended here as a JSON line
+	inboxN  int      // entries written to the inbox
+	token   string   // required by the inspector's API
 }
 
-func NewStore(limit int) *Store { return &Store{limit: limit} }
+// Inbox limits: a public catch link must not be able to fill the disk.
+const (
+	maxInboxEntries = 5000
+)
+
+// Persist appends every request from now on to path, one JSON object per
+// line, so `publiclocal replay` can send them again later.
+func (s *Store) Persist(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.inbox = f
+	s.mu.Unlock()
+	return nil
+}
+
+// Close stops writing to the inbox file.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inbox == nil {
+		return nil
+	}
+	err := s.inbox.Close()
+	s.inbox = nil
+	return err
+}
+
+// LoadInbox reads requests saved by Persist.
+func LoadInbox(path string) ([]*Entry, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []*Entry
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var e Entry
+		if json.Unmarshal(line, &e) == nil {
+			out = append(out, &e)
+		}
+	}
+	return out, nil
+}
+
+func NewStore(limit int) *Store {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return &Store{limit: limit, token: hex.EncodeToString(b)}
+}
+
+// Token is the secret the inspector page sends with its API calls.
+func (s *Store) Token() string { return s.token }
 
 // Add records a captured request.
 func (s *Store) Add(c client.Captured) *Entry {
@@ -71,6 +137,12 @@ func (s *Store) Add(c client.Captured) *Entry {
 	s.entries = append(s.entries, e)
 	if len(s.entries) > s.limit {
 		s.entries = s.entries[len(s.entries)-s.limit:]
+	}
+	if s.inbox != nil && s.inboxN < maxInboxEntries {
+		if b, err := json.Marshal(e); err == nil {
+			s.inbox.Write(append(b, '\n'))
+			s.inboxN++
+		}
 	}
 	s.mu.Unlock()
 	return e
@@ -158,17 +230,50 @@ func (s *Store) Summary() Summary {
 }
 
 // Replay sends a recorded request to the local app again and records the result.
-func (s *Store) Replay(id int) (*Entry, error) {
+func (s *Store) Replay(id int, to string) (*Entry, error) {
 	orig := s.Get(id)
 	if orig == nil {
 		return nil, errNotFound
 	}
-	if orig.ReqBinary {
-		return nil, errBinary
+	if to == "" {
+		to = orig.Local
 	}
-	req, err := http.NewRequest(orig.Method, "http://"+orig.Local+orig.Path, strings.NewReader(orig.ReqBody))
+	c, err := send(orig, to)
 	if err != nil {
 		return nil, err
+	}
+	e := s.Add(c)
+	e.ReplayOf = id
+	return e, nil
+}
+
+// Send replays one saved request to a local address and reports the status.
+func Send(e *Entry, to string) (status int, millis int64, err error) {
+	c, err := send(e, to)
+	if err != nil {
+		return 0, 0, err
+	}
+	if c.Remote == "replay-failed" {
+		return 0, 0, errors.New(string(c.RespBody))
+	}
+	return c.Status, c.Duration.Milliseconds(), nil
+}
+
+func send(orig *Entry, to string) (client.Captured, error) {
+	if orig.ReqBinary {
+		return client.Captured{}, errBinary
+	}
+	target, ok := localTarget(to)
+	if !ok {
+		return client.Captured{}, errors.New("replay goes to this computer only: a port, or localhost/127.0.0.1 with a port")
+	}
+	u, err := url.Parse("http://" + target + orig.Path)
+	if err != nil || u.Host != target || u.User != nil {
+		return client.Captured{}, errors.New("invalid request path")
+	}
+	req, err := http.NewRequest(orig.Method, u.String(), strings.NewReader(orig.ReqBody))
+	if err != nil {
+		return client.Captured{}, err
 	}
 	for k, vs := range orig.ReqHeader {
 		if k == "Content-Length" {
@@ -179,22 +284,113 @@ func (s *Store) Replay(id int) (*Entry, error) {
 	req.Host = orig.Host
 	start := time.Now()
 	resp, err := (&http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
-	c := client.Captured{Time: start, Local: orig.Local, Method: orig.Method, Path: orig.Path, Host: orig.Host, Remote: "replay", ReqHeader: orig.ReqHeader, ReqBody: []byte(orig.ReqBody)}
+	c := client.Captured{Time: start, Local: to, Method: orig.Method, Path: orig.Path, Host: orig.Host, Remote: "replay", ReqHeader: orig.ReqHeader, ReqBody: []byte(orig.ReqBody)}
 	if err != nil {
-		c.Status, c.Duration = http.StatusBadGateway, time.Since(start)
+		c.Status, c.Duration, c.Remote = http.StatusBadGateway, time.Since(start), "replay-failed"
 		c.RespBody = []byte("replay failed: " + err.Error())
-	} else {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, MaxBody+1))
-		resp.Body.Close()
-		c.Status, c.Duration, c.RespHeader = resp.StatusCode, time.Since(start), resp.Header
-		if len(body) > MaxBody {
-			body, c.RespTruncated = body[:MaxBody], true
-		}
-		c.RespBody, c.Bytes = body, int64(len(body))
+		return c, nil
 	}
-	e := s.Add(c)
-	e.ReplayOf = id
-	return e, nil
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, MaxBody+1))
+	resp.Body.Close()
+	c.Status, c.Duration, c.RespHeader = resp.StatusCode, time.Since(start), resp.Header
+	if len(body) > MaxBody {
+		body, c.RespTruncated = body[:MaxBody], true
+	}
+	c.RespBody, c.Bytes = body, int64(len(body))
+	return c, nil
+}
+
+// isLocal keeps replay pointed at this machine, so the inspector cannot be
+// used to send requests elsewhere.
+func isLocal(addr string) bool {
+	_, ok := localTarget(addr)
+	return ok
+}
+
+// localTarget accepts only "host:port" where host is localhost or a loopback
+// address and port is a number, and returns it rebuilt from those parts, so
+// nothing like "127.0.0.1:80@elsewhere" can smuggle in another destination.
+func localTarget(addr string) (string, bool) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", false
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+		return "", false
+	}
+	if host != "localhost" {
+		ip := net.ParseIP(host)
+		if ip == nil || !ip.IsLoopback() {
+			return "", false
+		}
+		host = ip.String()
+	}
+	return net.JoinHostPort(host, port), true
+}
+
+// HAR returns the recorded requests as an HTTP Archive (HAR 1.2) document,
+// which browsers' developer tools and many debugging tools can open.
+func (s *Store) HAR() map[string]any {
+	list := s.List()
+	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
+	entries := make([]map[string]any, 0, len(list))
+	for _, e := range list {
+		u := "https://" + e.Host + e.Path
+		query := []map[string]string{}
+		if i := strings.IndexByte(e.Path, '?'); i >= 0 {
+			for _, kv := range strings.Split(e.Path[i+1:], "&") {
+				k, v, _ := strings.Cut(kv, "=")
+				query = append(query, map[string]string{"name": k, "value": v})
+			}
+		}
+		req := map[string]any{
+			"method": e.Method, "url": u, "httpVersion": "HTTP/1.1", "cookies": []any{},
+			"headers": harHeaders(e.ReqHeader), "queryString": query, "headersSize": -1, "bodySize": len(e.ReqBody),
+		}
+		if e.ReqBody != "" {
+			req["postData"] = map[string]any{"mimeType": firstHeader(e.ReqHeader, "Content-Type"), "text": e.ReqBody}
+		}
+		entries = append(entries, map[string]any{
+			"startedDateTime": e.Time.Format(time.RFC3339Nano),
+			"time":            e.Millis,
+			"request":         req,
+			"response": map[string]any{
+				"status": e.Status, "statusText": http.StatusText(e.Status), "httpVersion": "HTTP/1.1", "cookies": []any{},
+				"headers": harHeaders(e.RespHeader), "redirectURL": firstHeader(e.RespHeader, "Location"), "headersSize": -1, "bodySize": e.Bytes,
+				"content": map[string]any{"size": e.Bytes, "mimeType": firstHeader(e.RespHeader, "Content-Type"), "text": e.RespBody},
+			},
+			"cache":   map[string]any{},
+			"timings": map[string]any{"send": 0, "wait": e.Millis, "receive": 0},
+		})
+	}
+	return map[string]any{"log": map[string]any{
+		"version": "1.2",
+		"creator": map[string]string{"name": "PublicLocal", "version": "1"},
+		"entries": entries,
+	}}
+}
+
+func harHeaders(h http.Header) []map[string]string {
+	out := []map[string]string{}
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		for _, v := range h[k] {
+			out = append(out, map[string]string{"name": k, "value": v})
+		}
+	}
+	return out
+}
+
+func firstHeader(h http.Header, k string) string {
+	if h == nil {
+		return ""
+	}
+	return h.Get(k)
 }
 
 var (
@@ -213,9 +409,13 @@ func (s *Store) Handler(links func() []string) http.Handler {
 	mux.HandleFunc("GET /api/requests", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.List())
 	})
+	mux.HandleFunc("GET /api/har", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Disposition", `attachment; filename="publiclocal-`+time.Now().Format("20060102-150405")+`.har"`)
+		writeJSON(w, s.HAR())
+	})
 	mux.HandleFunc("POST /api/replay/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.Atoi(r.PathValue("id"))
-		e, err := s.Replay(id)
+		e, err := s.Replay(id, r.URL.Query().Get("to"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -225,23 +425,57 @@ func (s *Store) Handler(links func() []string) http.Handler {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'")
-		page.Execute(w, struct{ Links []string }{links()})
+		page.Execute(w, struct {
+			Links []string
+			Token string
+		}{links(), s.token})
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Local only; refuse anything a web page on another origin sends.
-		if o := r.Header.Get("Origin"); o != "" && !strings.HasPrefix(o, "http://"+r.Host) {
+		// The inspector holds visitors' headers and bodies, so only the page it
+		// serves itself may use it: the Host must be a loopback name (stops DNS
+		// rebinding), any Origin must be exactly that host, and API calls must
+		// carry the token embedded in the page (stops cross-site requests).
+		if !loopbackHost(r.Host) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
+		}
+		if o := r.Header.Get("Origin"); o != "" {
+			ou, err := url.Parse(o)
+			if err != nil || ou.Scheme != "http" || ou.Host != r.Host {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			tok := r.Header.Get("X-Inspector-Token")
+			if tok == "" {
+				tok = r.URL.Query().Get("token") // for the HAR download link
+			}
+			if subtle.ConstantTimeCompare([]byte(tok), []byte(s.token)) != 1 {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 		}
 		mux.ServeHTTP(w, r)
 	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
-	var buf bytes.Buffer
-	json.NewEncoder(&buf).Encode(v)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(buf.Bytes())
+	json.NewEncoder(w).Encode(v) // streamed, so a large HAR is not built twice
+}
+
+// loopbackHost reports whether a Host header names this machine.
+func loopbackHost(hostport string) bool {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 var page = template.Must(template.New("inspect").Parse(`<!doctype html>
@@ -253,6 +487,8 @@ var page = template.Must(template.New("inspect").Parse(`<!doctype html>
   * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; height:100vh; display:flex; flex-direction:column }
   header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--card) }
   header b { font-size:15px } header .links { color:var(--muted); font-family:ui-monospace,Consolas,monospace; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  header .har { color:var(--accent); text-decoration:none; font-weight:600; white-space:nowrap }
+  .to { font:inherit; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); width:150px; margin-left:8px }
   header input { margin-left:auto; font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); width:220px }
   main { flex:1; display:grid; grid-template-columns: 420px 1fr; min-height:0 }
   @media (max-width:900px) { main { grid-template-columns:1fr } #detail { display:none } main.open #list { display:none } main.open #detail { display:block } }
@@ -268,12 +504,13 @@ var page = template.Must(template.New("inspect").Parse(`<!doctype html>
   .back { display:none } @media (max-width:900px) { .back { display:inline-block; margin-bottom:10px } }
 </style></head>
 <body>
-<header><b>PublicLocal inspector</b><span class="links">{{range .Links}}{{.}} {{end}}</span><input id="q" placeholder="filter path or method"></header>
+<header><b>PublicLocal inspector</b><span class="links">{{range .Links}}{{.}} {{end}}</span><input id="q" placeholder="filter path or method"><a class="har" href="/api/har?token={{.Token}}" download>Download HAR</a></header>
 <main id="main">
   <div id="list"><div class="empty">Waiting for requests… send one to your link and it appears here.</div></div>
   <div id="detail"><div class="empty">Select a request to see headers and bodies, and to replay it.</div></div>
 </main>
 <script>
+var TOKEN={{.Token}};
 (function(){
   var list=document.getElementById('list'), detail=document.getElementById('detail'), q=document.getElementById('q'), main=document.getElementById('main');
   var items=[], sel=null;
@@ -288,17 +525,17 @@ var page = template.Must(template.New("inspect").Parse(`<!doctype html>
   function show(e){
     sel=e.id; main.classList.add('open'); render();
     detail.innerHTML='<button class="quiet back" id="back">← Back</button><h2>'+esc(e.method)+' '+esc(e.path)+'</h2><div class="meta">'+esc(e.host)+' · <span class="'+cls(e.status)+'">'+e.status+'</span> · '+e.ms+' ms · '+e.bytes+' B · from '+esc(e.remote)+' · '+new Date(e.time).toLocaleTimeString()+(e.replay_of?' · replay of #'+e.replay_of:'')+'</div>'
-      +'<button id="replay"'+(e.req_binary?' disabled':'')+'>Replay against localhost</button>'
+      +'<button id="replay"'+(e.req_binary?' disabled':'')+'>Replay against localhost</button><input class="to" id="to" value="'+esc(e.local)+'" title="where to send it: a local port or host:port">'
       +'<h3>Request headers</h3><pre>'+esc(hdrs(e.req_header))+'</pre>'
       +(e.req_body?'<h3>Request body'+(e.req_truncated?' (truncated)':'')+'</h3><pre>'+esc(e.req_body)+'</pre>':'')
       +'<h3>Response headers</h3><pre>'+esc(hdrs(e.resp_header))+'</pre>'
       +(e.resp_body?'<h3>Response body'+(e.resp_truncated?' (truncated)':'')+'</h3><pre>'+esc(e.resp_body)+'</pre>':'');
-    document.getElementById('replay').onclick=function(){fetch('/api/replay/'+e.id,{method:'POST'}).then(function(r){return r.ok?r.json():r.text().then(function(t){throw new Error(t)})}).then(function(n){load().then(function(){var m=items.filter(function(x){return x.id===n.id})[0];if(m)show(m)})}).catch(function(err){alert(err.message)})};
+    document.getElementById('replay').onclick=function(){var t=document.getElementById('to').value.trim(); if(/^[0-9]+$/.test(t)) t='127.0.0.1:'+t; fetch('/api/replay/'+e.id+'?to='+encodeURIComponent(t),{method:'POST',headers:{'X-Inspector-Token':TOKEN}}).then(function(r){return r.ok?r.json():r.text().then(function(t){throw new Error(t)})}).then(function(n){load().then(function(){var m=items.filter(function(x){return x.id===n.id})[0];if(m)show(m)})}).catch(function(err){alert(err.message)})};
     var b=document.getElementById('back'); if(b) b.onclick=function(){main.classList.remove('open')};
   }
   list.addEventListener('click',function(ev){var r=ev.target.closest('.row');if(!r)return;var e=items.filter(function(x){return x.id==r.dataset.id})[0];if(e)show(e)});
   q.addEventListener('input',render);
-  function load(){return fetch('/api/requests').then(function(r){return r.json()}).then(function(d){items=d;render()}).catch(function(){})}
+  function load(){return fetch('/api/requests',{headers:{'X-Inspector-Token':TOKEN}}).then(function(r){return r.json()}).then(function(d){items=d;render()}).catch(function(){})}
   load(); setInterval(load,1000);
 })();
 </script>

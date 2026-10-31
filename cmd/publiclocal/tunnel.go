@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -28,9 +29,15 @@ type tunnelOpts struct {
 	sub, link               *string
 	fresh, qr, quiet, cors  *bool
 	password, note, inspect *string
+	hostHeader              *string
+	allowIP, allowGitHub    *string
+	open, copy              *bool
 	remotePort, maxVisits   *int
 	expires                 *time.Duration
 	debug                   *bool
+
+	// Set by `catch`: requests are kept in this inbox file for later replay.
+	inbox string
 }
 
 func tunnelFlags(kind string) (*flag.FlagSet, *tunnelOpts) {
@@ -47,6 +54,8 @@ func tunnelFlags(kind string) (*flag.FlagSet, *tunnelOpts) {
 	o.qr = fs.Bool("qr", false, "print a QR code of the link to scan with a phone")
 	o.quiet = fs.Bool("quiet", false, "do not print each request as it is served")
 	o.debug = fs.Bool("debug", false, "verbose logging")
+	o.open = fs.Bool("open", false, "open the link in your browser once it is ready")
+	o.copy = fs.Bool("copy", false, "copy the link to the clipboard once it is ready")
 	if kind == proto.TypeTCP {
 		o.remotePort = fs.Int("remote-port", 0, "requested public port")
 		return fs, o
@@ -59,7 +68,20 @@ func tunnelFlags(kind string) (*flag.FlagSet, *tunnelOpts) {
 	o.note = fs.String("note", "", "a note shown to visitors on the link's first page, e.g. \"staging build for Anna\"")
 	o.cors = fs.Bool("cors", false, "add permissive CORS headers so a browser app elsewhere can call this API")
 	o.inspect = fs.String("inspect", "127.0.0.1:4040", "address of the local request inspector (empty to disable)")
+	o.hostHeader = fs.String("host-header", "", "Host header your app receives, e.g. localhost for dev servers that reject other names")
+	o.allowIP = fs.String("allow-ip", "", "only these addresses or CIDR ranges may visit, comma separated")
+	o.allowGitHub = fs.String("allow-github", "", "visitors must sign in with GitHub; comma-separated users, or @org for an organisation")
 	return fs, o
+}
+
+func splitList(s string) []string {
+	var out []string
+	for p := range strings.SplitSeq(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func runClient(ctx context.Context, kind string, args []string) error {
@@ -104,6 +126,7 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 			t.RemotePort = *o.remotePort
 		} else {
 			t.Password, t.Note, t.MaxVisitors, t.MaxAge = *o.password, *o.note, *o.maxVisits, *o.expires
+			t.HostHeader, t.AllowIPs, t.AllowGitHub = *o.hostHeader, splitList(*o.allowIP), splitList(*o.allowGitHub)
 			if len(locals) == 1 {
 				t.Subdomain = *o.sub
 				if *o.link != "" {
@@ -121,6 +144,12 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 
 	// The request store feeds the terminal feed, the inspector and the summary.
 	store := inspect.NewStore(500)
+	if o.inbox != "" {
+		if err := store.Persist(o.inbox); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: cannot keep requests on disk:", err)
+		}
+		defer store.Close()
+	}
 	var mu sync.Mutex
 	var links []string
 	inspectURL := ""
@@ -196,6 +225,15 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 				if o.kind == proto.TypeHTTP && *o.cors {
 					notes = append(notes, "CORS headers on")
 				}
+				if o.kind == proto.TypeHTTP && *o.allowGitHub != "" {
+					notes = append(notes, "GitHub sign-in required ("+*o.allowGitHub+")")
+				}
+				if o.kind == proto.TypeHTTP && *o.allowIP != "" {
+					notes = append(notes, "limited to "+*o.allowIP)
+				}
+				if o.kind == proto.TypeHTTP && *o.hostHeader != "" {
+					notes = append(notes, "Host header "+*o.hostHeader)
+				}
 				if len(notes) > 0 {
 					fmt.Println("Link is " + strings.Join(notes, ", "))
 				}
@@ -211,6 +249,18 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 				}
 				if inspectURL != "" {
 					fmt.Printf("Inspector: %s (requests, headers, replay)\n", inspectURL)
+				}
+				// Only ever hand a web link for our own server to the OS.
+				link := infos[0].URL
+				if u, err := url.Parse(link); err == nil && (u.Scheme == "https" || u.Scheme == "http") && strings.HasSuffix(u.Hostname(), "."+serverHost(srv)) {
+					if *o.copy {
+						if err := copyToClipboard(link); err == nil {
+							fmt.Println("Link copied to the clipboard")
+						}
+					}
+					if *o.open {
+						openBrowser(link)
+					}
 				}
 			},
 		})

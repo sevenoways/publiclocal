@@ -140,6 +140,8 @@ type Server struct {
 	history      map[string]*reservation // expired links, for their status pages
 	accounts     map[string]*account     // by GitHub login
 	logins       map[string]*pendingLogin
+	visitors     map[string]*pendingVisitor // gated-link sign-ins in progress
+	spentTickets map[string]time.Time       // used sign-in tickets, until they expire
 	flags        map[string]*Flag
 
 	cookieKey  []byte        // signs the warning-page cookie
@@ -167,13 +169,12 @@ func (s *Server) EnableSSH() (fingerprint string, err error) {
 }
 
 type route struct {
-	sess     *session
-	idx      int // index of the tunnel in the client's Hello
-	proxy    *httputil.ReverseProxy
-	limiter  *bucket
-	password string // HTTP Basic auth password visitors must give; empty for none
-	note     string // shown to visitors on the warning page
-	maxVisit int    // only the first N visitor networks may use the link; 0 = no limit
+	sess    *session
+	idx     int // index of the tunnel in the client's Hello
+	proxy   *httputil.ReverseProxy
+	limiter *bucket
+	opts    atomic.Pointer[linkOpts]
+	id      string // random per route; scopes visitor sign-ins to this link instance
 
 	requests atomic.Int64
 	bytes    atomic.Int64
@@ -264,14 +265,16 @@ func New(cfg Config) *Server {
 	setDefault(&cfg.GitHubAPIURL, "https://api.github.com")
 	cfg.Domain = strings.ToLower(strings.TrimSuffix(cfg.Domain, "."))
 	s := &Server{
-		cfg:      cfg,
-		log:      cfg.Logger,
-		scheme:   "http",
-		hosts:    map[string]*route{},
-		sessions: map[*session]struct{}{},
-		bans:     loadBans(cfg.BanFile),
-		logins:   map[string]*pendingLogin{},
-		flags:    map[string]*Flag{},
+		cfg:          cfg,
+		log:          cfg.Logger,
+		scheme:       "http",
+		hosts:        map[string]*route{},
+		sessions:     map[*session]struct{}{},
+		bans:         loadBans(cfg.BanFile),
+		logins:       map[string]*pendingLogin{},
+		visitors:     map[string]*pendingVisitor{},
+		spentTickets: map[string]time.Time{},
+		flags:        map[string]*Flag{},
 	}
 	s.connLimit = newRateLimiter(cfg.ConnectsPerMinute)
 	s.loginLimit = newRateLimiter(cfg.LoginsPerMinute)
@@ -512,26 +515,48 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.Public {
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	}
+	o := rt.opts.Load()
+	if !o.ipAllowed(r.RemoteAddr) {
+		s.statusPage(w, r, statusPage{
+			Code: http.StatusForbidden, Host: host,
+			Title:   "This link is limited to certain networks",
+			Message: "The person who shared it allowed only some addresses, and yours is not one of them.",
+			Hint:    "Ask them to add your address, or to share it differently.",
+		})
+		return
+	}
+	if r.URL.Path == viewerAuthPath {
+		// Our sign-in path never reaches the app, gated or not.
+		if o.needsGitHub {
+			s.acceptViewerTicket(w, r, host, rt)
+		} else {
+			http.Error(w, "publiclocal: this link does not use sign-in", http.StatusNotFound)
+		}
+		return
+	}
+	if o.needsGitHub && !s.githubGate(w, r, host, sub, rt, o) {
+		return
+	}
 	if s.cfg.Warning {
 		if r.URL.Path == continuePath {
 			s.acceptWarning(w, r, host)
 			return
 		}
 		if s.needsWarning(r, host) {
-			s.serveWarning(w, r, host, rt.note, rt.sess.account)
+			s.serveWarning(w, r, host, o.note, rt.sess.account)
 			return
 		}
 	}
-	if rt.password != "" {
+	if o.password != "" {
 		_, pw, ok := r.BasicAuth()
-		if !ok || subtle.ConstantTimeCompare([]byte(pw), []byte(rt.password)) != 1 {
+		if !ok || subtle.ConstantTimeCompare([]byte(pw), []byte(o.password)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Basic realm="PublicLocal link", charset="UTF-8"`)
 			http.Error(w, "publiclocal: this link needs a password", http.StatusUnauthorized)
 			return
 		}
 		r.Header.Del("Authorization") // the app never sees the link password
 	}
-	if rt.maxVisit > 0 && !s.admitVisitor(sub, ipKey(r.RemoteAddr), rt.maxVisit) {
+	if o.maxVisit > 0 && !s.admitVisitor(sub, ipKey(r.RemoteAddr), o.maxVisit) {
 		s.statusPage(w, r, statusPage{
 			Code: http.StatusGone, Host: host,
 			Title:   "This link has reached its visitor limit",
@@ -571,6 +596,7 @@ type session struct {
 	bytes     atomic.Int64
 	overLimit atomic.Bool
 	events    chan proto.Event // nil unless the client asked for request events
+	sshOpts   *sshOptSet       // options an SSH user gave; guarded by srv.mu
 }
 
 // emit queues a request event for the client, dropping it if the client is
@@ -739,11 +765,13 @@ func (s *Server) register(sess *session) error {
 
 func (sess *session) addHTTP(idx int, t proto.TunnelReq) (proto.TunnelInfo, error) {
 	s := sess.srv
-	sub, claim, password := strings.ToLower(t.Subdomain), t.Claim, t.Password
-	if len(password) > 200 || len(t.Note) > 200 {
-		return proto.TunnelInfo{}, errors.New("password or note too long (200 characters)")
+	sub, claim := strings.ToLower(t.Subdomain), t.Claim
+	opts, err := s.parseLinkOpts(t)
+	if err != nil {
+		return proto.TunnelInfo{}, err
 	}
-	rt := &route{sess: sess, idx: idx, password: password, note: strings.TrimSpace(t.Note), maxVisit: t.MaxVisitors}
+	rt := &route{sess: sess, idx: idx, id: newSecret()[:16]}
+	rt.opts.Store(opts)
 	if n := s.cfg.RequestsPerMinute; n > 0 {
 		rt.limiter = newBucket(n)
 	}
@@ -751,8 +779,12 @@ func (sess *session) addHTTP(idx int, t proto.TunnelReq) (proto.TunnelInfo, erro
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(&url.URL{Scheme: "http", Host: "publiclocal-tunnel"})
 			pr.Out.Host = pr.In.Host
+			if h := rt.opts.Load().hostHeader; h != "" {
+				pr.Out.Host = h // dev servers that only answer to "localhost"
+			}
 			pr.SetXForwarded()
 			stripWarningCookie(pr.Out)
+			stripCookie(pr.Out, viewerCookie) // the app never learns who signed in
 		},
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

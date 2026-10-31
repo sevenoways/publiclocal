@@ -27,6 +27,8 @@ const usage = `publiclocal - make localhost public
 Usage:
   publiclocal http    [flags] <port> [port...]              expose local HTTP services
   publiclocal share   [flags] <file or folder>              share a file or folder from this computer
+  publiclocal catch   [flags]                               a link that records every request (webhook inbox)
+  publiclocal replay  --to <port>                           send caught requests to your app
   publiclocal tcp     [flags] <port|host:port>              expose a local TCP service (own server only)
   publiclocal login                                        sign in with GitHub for 7-day links
   publiclocal links                                         your links and when they expire
@@ -59,6 +61,10 @@ func main() {
 		err = runClient(ctx, os.Args[1], os.Args[2:])
 	case "share":
 		err = runShare(ctx, os.Args[2:])
+	case "catch":
+		err = runCatch(ctx, os.Args[2:])
+	case "replay":
+		err = runReplay(os.Args[2:])
 	case "admin":
 		err = runAdmin(os.Args[2:])
 	case "mcp":

@@ -30,6 +30,11 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **Zero-install SSH tunnels**: `ssh -p 443 -R0:localhost:3000 publiclocal.app`, nothing to download
 - **Live request feed** in your terminal, and a **local inspector** at `localhost:4040` with headers, bodies and **webhook replay**
 - **Share a folder or file** with `publiclocal share ./build`, no web server needed
+- **GitHub sign-in to view** (`--allow-github anna,@my-org`): only the people or organisation members you name get in
+- **Webhook inbox**: `publiclocal catch` records every request with nothing running locally; `publiclocal replay --to 3000` sends them to your app later
+- **`--host-header localhost`** for Vite, Django, Rails and other dev servers that reject unknown hosts; `--allow-ip` to limit visitors by address
+- **`--open` / `--copy`** the link the moment it's ready, and **HAR export** from the inspector
+- **Options for SSH users**: `ssh -p 443 -R0:localhost:3000 publiclocal.app password=s3cret expires=30m`
 - **Password-protected links** (`--password`), enforced before anything reaches your app, free server included
 - **Self-destructing links**: `--max-visits 1` for one person, `--expires 30m` for a short while
 - **Several ports at once**: `publiclocal http 3000 8080`
@@ -99,6 +104,9 @@ publiclocal http --qr 3000                 # QR code to scan with a phone
 publiclocal http 3000 8080                 # two links at once
 publiclocal http --max-visits 1 --expires 30m --note "for Anna" 3000
 publiclocal share ./build                  # serve a folder (or a file) from this computer
+publiclocal http --allow-github anna,@acme 3000   # visitors sign in with GitHub
+publiclocal http --host-header localhost 5173     # for dev servers that check the Host
+publiclocal catch                         # webhook inbox; later: publiclocal replay --to 3000
 publiclocal tcp 22                         # tcp://tunnel.example.com:1xxxx
 publiclocal tcp --remote-port 15432 5432   # fixed public port
 ```

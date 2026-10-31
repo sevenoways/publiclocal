@@ -28,14 +28,14 @@ func TestStoreReplayAndHandler(t *testing.T) {
 		Time: time.Now(), Local: app.Listener.Addr().String(), Method: "POST", Path: "/hook?x=1", Host: "k7xq2m.publiclocal.app",
 		Status: 200, Duration: 5 * time.Millisecond, Remote: "203.0.113.5", ReqHeader: http.Header{"Content-Type": {"application/json"}}, ReqBody: []byte(`{"id":1}`),
 	})
-	re, err := s.Replay(e.ID)
+	re, err := s.Replay(e.ID, "")
 	if err != nil || re.ReplayOf != e.ID || re.Status != 200 || !strings.Contains(re.RespBody, `got POST {"id":1} host=k7xq2m.publiclocal.app`) {
 		t.Fatalf("replay: %+v %v", re, err)
 	}
 	if hits.Load() != 1 {
 		t.Fatalf("app hit %d times", hits.Load())
 	}
-	if _, err := s.Replay(999); err == nil {
+	if _, err := s.Replay(999, ""); err == nil {
 		t.Fatal("replaying a missing id should fail")
 	}
 
@@ -54,7 +54,12 @@ func TestStoreReplayAndHandler(t *testing.T) {
 
 	h := httptest.NewServer(s.Handler(func() []string { return []string{"https://k7x.example"} }))
 	defer h.Close()
-	resp, _ := http.Get(h.URL + "/api/requests")
+	if r, _ := http.Get(h.URL + "/api/requests"); r.StatusCode != http.StatusForbidden {
+		t.Fatalf("API without the token should be refused: %d", r.StatusCode)
+	}
+	areq, _ := http.NewRequest("GET", h.URL+"/api/requests", nil)
+	areq.Header.Set("X-Inspector-Token", s.Token())
+	resp, _ := http.DefaultClient.Do(areq)
 	var list []Entry
 	json.NewDecoder(resp.Body).Decode(&list)
 	if len(list) != 3 {
@@ -67,8 +72,29 @@ func TestStoreReplayAndHandler(t *testing.T) {
 	}
 	req, _ := http.NewRequest("GET", h.URL+"/api/requests", nil)
 	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("X-Inspector-Token", s.Token())
 	if r, _ := http.DefaultClient.Do(req); r.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-origin should be refused: %d", r.StatusCode)
+	}
+	// DNS rebinding: a foreign Host name is refused even with the token.
+	req, _ = http.NewRequest("GET", h.URL+"/api/requests", nil)
+	req.Host = "attacker.example"
+	req.Header.Set("X-Inspector-Token", s.Token())
+	if r, _ := http.DefaultClient.Do(req); r.StatusCode != http.StatusForbidden {
+		t.Fatalf("foreign Host should be refused: %d", r.StatusCode)
+	}
+}
+
+func TestLocalTarget(t *testing.T) {
+	for _, bad := range []string{"127.0.0.1:80@evil.example", "evil.example:80", "127.0.0.1", "127.0.0.1:0", "127.0.0.1:99999", "127.0.0.1:080", "10.0.0.1:80", "localhost:80/x"} {
+		if _, ok := localTarget(bad); ok {
+			t.Errorf("%q should be refused", bad)
+		}
+	}
+	for _, good := range []string{"127.0.0.1:3000", "localhost:8080", "[::1]:3000"} {
+		if _, ok := localTarget(good); !ok {
+			t.Errorf("%q should be allowed", good)
+		}
 	}
 }
 
@@ -78,7 +104,50 @@ func TestBinaryBodies(t *testing.T) {
 	if !e.ReqBinary || !strings.Contains(e.ReqBody, "binary") || e.RespBinary {
 		t.Fatalf("binary detection: %+v", e)
 	}
-	if _, err := s.Replay(e.ID); err == nil {
+	if _, err := s.Replay(e.ID, ""); err == nil {
 		t.Fatal("binary bodies cannot be replayed")
+	}
+}
+
+func TestInboxHARAndReplayTarget(t *testing.T) {
+	path := t.TempDir() + "/inbox.jsonl"
+	s := NewStore(10)
+	if err := s.Persist(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.Add(client.Captured{Time: time.Now(), Method: "POST", Path: "/hook?a=1", Host: "k.example", Status: 200,
+		ReqHeader: http.Header{"Content-Type": {"application/json"}}, ReqBody: []byte(`{"n":1}`), RespHeader: http.Header{"Content-Type": {"text/plain"}}, RespBody: []byte("ok")})
+	s.Add(client.Captured{Time: time.Now(), Method: "GET", Path: "/x", Host: "k.example", Status: 404})
+
+	saved, err := LoadInbox(path)
+	if err != nil || len(saved) != 2 || saved[0].ReqBody != `{"n":1}` {
+		t.Fatalf("inbox: %d %v", len(saved), err)
+	}
+
+	var got []string
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = append(got, r.Method+" "+r.URL.RequestURI()+" "+string(b))
+		w.WriteHeader(201)
+	}))
+	defer app.Close()
+	if status, _, err := Send(saved[0], app.Listener.Addr().String()); err != nil || status != 201 || got[0] != `POST /hook?a=1 {"n":1}` {
+		t.Fatalf("send: %d %v %v", status, err, got)
+	}
+	// Replay never leaves this machine.
+	if _, _, err := Send(saved[0], "203.0.113.5:80"); err == nil {
+		t.Fatal("replay to a remote address should be refused")
+	}
+	if _, err := s.Replay(1, "example.com:80"); err == nil {
+		t.Fatal("inspector replay to a remote address should be refused")
+	}
+
+	har := s.HAR()
+	b, _ := json.Marshal(har)
+	for _, want := range []string{`"version":"1.2"`, `"url":"https://k.example/hook?a=1"`, `"text":"{\"n\":1}"`, `"status":404`} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("HAR missing %s: %s", want, b)
+		}
 	}
 }

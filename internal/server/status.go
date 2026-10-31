@@ -136,7 +136,9 @@ func (s *Server) linkStatus(w http.ResponseWriter, sub string) {
 		if rt == nil && !res.LastOnline.IsZero() {
 			out["last_online"] = res.LastOnline
 		}
-		out["requests"], out["bytes"], out["visitors"] = req, bytes, vis
+		if rt == nil || !restricted(rt) {
+			out["requests"], out["bytes"], out["visitors"] = req, bytes, vis
+		}
 	case past != nil:
 		out["state"] = "expired"
 		out["created"], out["expires"] = past.Created, past.Expires
@@ -154,6 +156,13 @@ func (s *Server) linkStatus(w http.ResponseWriter, sub string) {
 		w.WriteHeader(http.StatusNotFound)
 	}
 	writeJSON(w, out)
+}
+
+// restricted reports whether a link limits who may visit; its traffic
+// numbers are then not shown to everyone.
+func restricted(rt *route) bool {
+	o := rt.opts.Load()
+	return o.password != "" || o.needsGitHub || len(o.allowNets) > 0
 }
 
 func trafficRows(requests, bytes int64, visitors int) []statRow {

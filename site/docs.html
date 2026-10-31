@@ -32,7 +32,7 @@
   <h1>Documentation</h1>
   <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 30 October 2026 · v1.0</span></p>
   <nav class="toc" aria-label="On this page">
-    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#gate">GitHub sign-in</a><a href="#catch">Webhook inbox</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
 
   <h2 id="install">Install</h2>
@@ -64,6 +64,7 @@ go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest</pre>
     <li>Change <code>3000</code> to your app's port. Several <code>-R</code> options give several links.</li>
     <li>Port 443 gets through almost any firewall. The first time, SSH asks you to confirm the server's key; check it matches the fingerprint below.</li>
     <li>Add <code>-o ServerAliveInterval=30</code> on flaky networks, and <code>-T</code> if you don't want a terminal.</li>
+    <li>Options go after the host name: <code>ssh -p 443 -R0:localhost:3000 publiclocal.app password=s3cret expires=30m max-visits=1 host-header=localhost allow-ip=203.0.113.0/24 allow-github=anna,@acme note="for Anna"</code>. With <code>-N</code>, put them in the user name instead, joined by <code>+</code>: <code>"password=s3cret+expires=30m"@publiclocal.app</code>.</li>
     <li>SSH links are anonymous and end when you disconnect. For passwords, <code>--max-visits</code>, the inspector, file sharing and links that survive restarts, install the client.</li>
   </ul>
   <p>Server key fingerprint: <code id="ssh-fp">SHA256:vqk+u4I5WNZckst73cTJ0JtEM+0Gh54A49ZjoZpbEWQ</code> (ED25519)</p>
@@ -93,6 +94,25 @@ Served 2 requests from 2 visitors · 4 KB · top: /webhooks/stripe (1), /api/ord
 <span class="dim">$</span> publiclocal http 3000 8080                   <span class="dim"># two links in one go</span></pre>
   <p>The password is checked by the server before anything reaches your app, and your app never sees the password header. The note appears on the first page visitors see, together with your GitHub name if you are signed in. <code>--max-visits</code> counts visitor networks: the first N people who open the link keep access, everyone else gets "visitor limit reached".</p>
 
+  <h2 id="gate">Only for people you choose: GitHub sign-in</h2>
+<pre class="block"><span class="dim">$</span> publiclocal http --allow-github anna,bob 3000      <span class="dim"># these GitHub users</span>
+<span class="dim">$</span> publiclocal http --allow-github @acme 3000         <span class="dim"># members of the acme organisation</span>
+<span class="dim">$</span> publiclocal http --allow-ip 203.0.113.0/24 3000    <span class="dim"># or limit by network</span></pre>
+  <p>Visitors are sent to sign in with GitHub, and only the people (or organisation members) you name get through; everyone else sees "this link is shared with specific GitHub users". Your app never sees their GitHub token. Organisation checks ask the visitor for read-only access to their organisation memberships, so private memberships count too.</p>
+
+  <h2 id="catch">Webhook inbox: catch now, replay later</h2>
+<pre class="block"><span class="dim">$</span> publiclocal catch
+Catching requests; they are saved to ~/.config/publiclocal/inbox/20261031-143000.jsonl
+Forwarding <span class="url">https://k7xq2m.publiclocal.app</span> -> 127.0.0.1:50311
+
+<span class="dim"># later, once your handler exists:</span>
+<span class="dim">$</span> publiclocal replay --list
+<span class="dim">$</span> publiclocal replay --to 3000              <span class="dim"># all of them, or --id 4, or --last 1</span></pre>
+  <p>Point Stripe, GitHub or Slack at the link before you've written any code. Every request is answered (200 "ok" by default, <code>--status</code> and <code>--body</code> to change it) and saved with headers and body. Replay only ever sends to this computer. Inbox files keep headers as sent, including webhook signatures and tokens, so delete them when you are done. An inbox stops recording after 5,000 requests.</p>
+
+  <h2 id="devservers">Dev servers that reject the tunnel's address</h2>
+  <p>Vite, webpack, Django (<code>ALLOWED_HOSTS</code>), Rails (<code>config.hosts</code>) and others refuse requests whose Host isn't one they expect. <code>--host-header localhost</code> (or <code>localhost:5173</code>) sends them the name they want; the public name stays in <code>X-Forwarded-Host</code>. <code>--open</code> opens the link in your browser and <code>--copy</code> puts it on the clipboard as soon as it is ready. The inspector's <em>Download HAR</em> button saves every captured request for a bug report or your browser's developer tools.</p>
+
   <h2 id="share">Share a folder or a file</h2>
 <pre class="block"><span class="dim">$</span> publiclocal share ./build          <span class="dim"># a folder, with a listing</span>
 <span class="dim">$</span> publiclocal share report.pdf       <span class="dim"># a single file, served at /</span></pre>
@@ -113,8 +133,10 @@ Served 2 requests from 2 visitors · 4 KB · top: /webhooks/stripe (1), /api/ord
   <div class="table-wrap"><table>
     <thead><tr><th>Command</th><th>What it does</th></tr></thead>
     <tbody>
-    <tr><td><code>publiclocal http &lt;port&gt; [port...]</code></td><td>Public HTTPS links for local HTTP servers. Flags: <code>--password</code>, <code>--max-visits</code>, <code>--expires</code>, <code>--note</code>, <code>--cors</code>, <code>--qr</code>, <code>--inspect</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
+    <tr><td><code>publiclocal http &lt;port&gt; [port...]</code></td><td>Public HTTPS links for local HTTP servers. Flags: <code>--password</code>, <code>--allow-github</code>, <code>--allow-ip</code>, <code>--host-header</code>, <code>--open</code>, <code>--copy</code>, <code>--max-visits</code>, <code>--expires</code>, <code>--note</code>, <code>--cors</code>, <code>--qr</code>, <code>--inspect</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
     <tr><td><code>publiclocal share &lt;path&gt;</code></td><td>Serve a folder or file from this computer and share it. Same flags as <code>http</code>.</td></tr>
+    <tr><td><code>publiclocal catch</code></td><td>A link that answers and records every request (webhook inbox). <code>--status</code>, <code>--body</code>, plus the link flags.</td></tr>
+    <tr><td><code>publiclocal replay --to &lt;port&gt;</code></td><td>Send caught requests to your app. <code>--list</code>, <code>--id</code>, <code>--last</code>, <code>--file</code>.</td></tr>
     <tr><td><code>publiclocal tcp &lt;port&gt;</code></td><td>Public TCP port for SSH, databases or game servers. Self-hosted servers only. <code>--remote-port N</code> asks for a fixed port.</td></tr>
     <tr><td><code>publiclocal login</code> / <code>logout</code></td><td>Sign in with GitHub for 7-day links; sign out and revoke the token.</td></tr>
     <tr><td><code>publiclocal links</code></td><td>List your links, whether they are online, and when they expire.</td></tr>

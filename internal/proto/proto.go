@@ -50,6 +50,14 @@ type TunnelReq struct {
 	MaxVisitors int `json:"max_visitors,omitempty"`
 	// Note is shown to visitors on the warning page, e.g. what the link is.
 	Note string `json:"note,omitempty"`
+	// HostHeader replaces the Host header sent to the local app, for dev
+	// servers that only answer to "localhost".
+	HostHeader string `json:"host_header,omitempty"`
+	// AllowIPs limits visitors to these addresses or CIDR ranges.
+	AllowIPs []string `json:"allow_ips,omitempty"`
+	// AllowGitHub makes visitors sign in with GitHub; entries are user names,
+	// or "@org" for members of an organisation.
+	AllowGitHub []string `json:"allow_github,omitempty"`
 	// Claim takes back a link this client was given earlier, e.g. after a
 	// reconnect. It is the Claim from that link's TunnelInfo.
 	Claim string `json:"claim,omitempty"`
