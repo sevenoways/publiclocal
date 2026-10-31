@@ -376,11 +376,15 @@ func (s *Server) applySSHOptions(sess *session, words []string) (string, error) 
 	}
 	s.mu.Lock()
 	sess.sshOpts = &sshOptSet{req: t, expires: expires}
+	var until time.Time // the new end of the session's links, for the message
 	for _, sub := range sess.subs {
 		if rt := s.hosts[sub]; rt != nil && rt.sess == sess {
 			rt.opts.Store(opts)
 		}
 		s.shortenLocked(sub, expires)
+		if res := s.reservations[sub]; res != nil && !res.Expires.IsZero() && (until.IsZero() || res.Expires.Before(until)) {
+			until = res.Expires
+		}
 	}
 	s.saveLocked()
 	s.mu.Unlock()
@@ -388,8 +392,11 @@ func (s *Server) applySSHOptions(sess *session, words []string) (string, error) 
 	if opts.password != "" {
 		parts = append(parts, "password set")
 	}
-	if expires > 0 {
-		parts = append(parts, "expires in "+expires.String())
+	switch {
+	case expires > 0 && !until.IsZero():
+		parts = append(parts, "link now valid until "+until.UTC().Format("Mon 2 Jan 15:04")+" UTC")
+	case expires > 0:
+		parts = append(parts, "links expire after "+expires.String())
 	}
 	if opts.maxVisit > 0 {
 		parts = append(parts, fmt.Sprintf("first %d visitor(s) only", opts.maxVisit))

@@ -33,6 +33,11 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **GitHub sign-in to view** (`--allow-github anna,@my-org`): only the people or organisation members you name get in
 - **Webhook inbox**: `publiclocal catch` records every request with nothing running locally; `publiclocal replay --to 3000` sends them to your app later
 - **`--host-header localhost`** for Vite, Django, Rails and other dev servers that reject unknown hosts; `--allow-ip` to limit visitors by address
+- **Webhook signature checks**: `--verify stripe:whsec_...` (also `github`, `slack`, `shopify`) marks every webhook ✓ or ✗; `--verify-strict` refuses bad ones
+- **Mock responses**: `--mock /api/users=users.json` answers paths from files, so demos work before the backend does
+- **Bad-network simulation**: `--latency 200ms-2s` and `--fail 10%` show how your app copes with a slow or flaky connection
+- **Feedback button**: `--feedback` lets people you share with leave comments that appear in your terminal
+- **Live view for teammates**: `--live` prints a private link where others watch requests arrive (paths only)
 - **`--open` / `--copy`** the link the moment it's ready, and **HAR export** from the inspector
 - **Options for SSH users**: `ssh -p 443 -R0:localhost:3000 publiclocal.app password=s3cret expires=30m`
 - **Password-protected links** (`--password`), enforced before anything reaches your app, free server included
@@ -107,6 +112,9 @@ publiclocal share ./build                  # serve a folder (or a file) from thi
 publiclocal http --allow-github anna,@acme 3000   # visitors sign in with GitHub
 publiclocal http --host-header localhost 5173     # for dev servers that check the Host
 publiclocal catch                         # webhook inbox; later: publiclocal replay --to 3000
+publiclocal http --verify stripe:whsec_... 3000  # check webhook signatures
+publiclocal http --mock /api/users=users.json 3000  # answer a path from a file
+publiclocal http --feedback --live 3000    # comments from visitors, live view for teammates
 publiclocal tcp 22                         # tcp://tunnel.example.com:1xxxx
 publiclocal tcp --remote-port 15432 5432   # fixed public port
 ```

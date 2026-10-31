@@ -59,6 +59,19 @@ type Config struct {
 	// CORS adds permissive CORS headers to every HTTP response, so a browser
 	// app on another origin can call the local API during development.
 	CORS bool
+
+	// Verify checks webhook signatures; the result is in Captured.Verified.
+	Verify *Verifier
+	// Mocks answer matching requests from files instead of the app.
+	Mocks []Mock
+	// Chaos slows down or fails requests on purpose.
+	Chaos Chaos
+	// Feedback adds a comment button to the app's HTML pages; comments go to OnFeedback.
+	Feedback   bool
+	OnFeedback func(Feedback)
+	// LiveKey, if set, opens a read-only live request viewer at
+	// /.publiclocal/live?k=LiveKey on each HTTP link.
+	LiveKey string
 }
 
 // RejectedError is returned when the server refuses the session (bad token,

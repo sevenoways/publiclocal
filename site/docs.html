@@ -30,9 +30,9 @@
 
 <main class="wrap prose">
   <h1>Documentation</h1>
-  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 30 October 2026 · v1.0</span></p>
+  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 31 October 2026 · v1.3</span></p>
   <nav class="toc" aria-label="On this page">
-    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#gate">GitHub sign-in</a><a href="#catch">Webhook inbox</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#gate">GitHub sign-in</a><a href="#catch">Webhook inbox</a><a href="#verify">Signature checks</a><a href="#mock">Mocks &amp; bad networks</a><a href="#feedback">Feedback &amp; live view</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
 
   <h2 id="install">Install</h2>
@@ -109,6 +109,26 @@ Forwarding <span class="url">https://k7xq2m.publiclocal.app</span> -> 127.0.0.1:
 <span class="dim">$</span> publiclocal replay --list
 <span class="dim">$</span> publiclocal replay --to 3000              <span class="dim"># all of them, or --id 4, or --last 1</span></pre>
   <p>Point Stripe, GitHub or Slack at the link before you've written any code. Every request is answered (200 "ok" by default, <code>--status</code> and <code>--body</code> to change it) and saved with headers and body. Replay only ever sends to this computer. Inbox files keep headers as sent, including webhook signatures and tokens, so delete them when you are done. An inbox stops recording after 5,000 requests.</p>
+
+  <h2 id="verify">Check webhook signatures</h2>
+<pre class="block"><span class="dim">$</span> publiclocal http --verify stripe:whsec_... 3000
+12:01:04  POST   /webhooks/stripe   200    41 ms  54.187.174.169  [✓ signed]
+12:01:09  POST   /webhooks/stripe   200    38 ms  203.0.113.7     [✗ bad signature (wrong secret, or body changed)]</pre>
+  <p>Every webhook is checked against your signing secret and marked in the terminal and the inspector, so you know at once whether a failing handler or a wrong secret is to blame. Works with <code>stripe</code>, <code>github</code>, <code>slack</code> and <code>shopify</code>. Stripe and Slack signatures older than five minutes are flagged as possible replays. Only POST, PUT and PATCH requests are checked. Add <code>--verify-strict</code> to refuse those with a bad signature with 401 before they reach your app; pages still load. Put the secret in <code>PUBLICLOCAL_VERIFY</code> to keep it out of your shell history.</p>
+
+  <h2 id="mock">Mock responses and bad networks</h2>
+<pre class="block"><span class="dim">$</span> publiclocal http --mock /api/users=users.json --mock "POST /pay=402" --mock "/legacy/*=404" 3000
+<span class="dim">$</span> publiclocal http --latency 200ms-2s --fail 10% 3000</pre>
+  <p><code>--mock</code> answers a path from a file (or with just a status code) instead of your app, so a frontend demo works before the backend does. A path ending in <code>*</code> covers everything under it; the file is read again on every request, so edit it while you demo. <code>--latency</code> slows every request and <code>--fail</code> answers a share of them with 503, to see how your app copes with a slow or flaky network. All three show in the request feed.</p>
+
+  <h2 id="feedback">Collect feedback and watch requests live</h2>
+<pre class="block"><span class="dim">$</span> publiclocal http --feedback --live 3000
+Forwarding https://k7xq2m.publiclocal.app -&gt; 127.0.0.1:3000
+Live view:  https://k7xq2m.publiclocal.app/.publiclocal/live?k=9f2c... (share with teammates; paths only)
+
+💬 Feedback from Anna on /pricing:
+   The second plan's button is cut off on my phone.</pre>
+  <p><code>--feedback</code> adds a small Feedback button to your app's pages. Visitors write a comment and it appears in your terminal (pages are left untouched when they stream or are over 5 MB), with the page they were on. Nothing is stored anywhere else. <code>--live</code> prints a private link where teammates watch requests arrive as they happen. It shows only method, path, status and time, never headers, bodies or query strings, so avoid it if your paths contain secrets such as reset tokens. Both follow the link's password, IP and GitHub rules.</p>
 
   <h2 id="devservers">Dev servers that reject the tunnel's address</h2>
   <p>Vite, webpack, Django (<code>ALLOWED_HOSTS</code>), Rails (<code>config.hosts</code>) and others refuse requests whose Host isn't one they expect. <code>--host-header localhost</code> (or <code>localhost:5173</code>) sends them the name they want; the public name stays in <code>X-Forwarded-Host</code>. <code>--open</code> opens the link in your browser and <code>--copy</code> puts it on the clipboard as soon as it is ready. The inspector's <em>Download HAR</em> button saves every captured request for a bug report or your browser's developer tools.</p>

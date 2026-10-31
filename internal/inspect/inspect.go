@@ -42,6 +42,8 @@ type Entry struct {
 	Bytes    int64     `json:"bytes"`
 	Local    string    `json:"local"`
 	ReplayOf int       `json:"replay_of,omitempty"`
+	Verified string    `json:"verified,omitempty"` // --verify result
+	Note     string    `json:"note,omitempty"`     // mock, simulated failure, added latency
 
 	ReqHeader     http.Header `json:"req_header"`
 	ReqBody       string      `json:"req_body"`
@@ -126,7 +128,7 @@ func (s *Store) Token() string { return s.token }
 func (s *Store) Add(c client.Captured) *Entry {
 	e := &Entry{
 		Time: c.Time, Method: c.Method, Path: c.Path, Host: c.Host, Status: c.Status, Millis: c.Duration.Milliseconds(),
-		Remote: c.Remote, Bytes: c.Bytes, Local: c.Local,
+		Remote: c.Remote, Bytes: c.Bytes, Local: c.Local, Verified: c.Verified, Note: c.Note,
 		ReqHeader: c.ReqHeader, ReqTruncated: c.ReqTruncated, RespHeader: c.RespHeader, RespTruncated: c.RespTruncated,
 	}
 	e.ReqBody, e.ReqBinary = textOrMark(c.ReqBody)
@@ -520,7 +522,7 @@ var TOKEN={{.Token}};
   function render(){
     var f=q.value.toLowerCase(), rows=items.filter(function(e){return !f||(e.method+' '+e.path).toLowerCase().indexOf(f)>=0});
     if(!rows.length){list.innerHTML='<div class="empty">'+(items.length?'No requests match.':'Waiting for requests… send one to your link and it appears here.')+'</div>';return}
-    list.innerHTML=rows.map(function(e){return '<div class="row'+(sel===e.id?' sel':'')+'" data-id="'+e.id+'"><span class="m">'+esc(e.method)+'</span><span class="p">'+esc(e.path)+(e.replay_of?' <span class="replay">replay of #'+e.replay_of+'</span>':'')+'</span><span class="'+cls(e.status)+'">'+e.status+'</span><span class="t">'+e.ms+' ms</span></div>'}).join('');
+    list.innerHTML=rows.map(function(e){return '<div class="row'+(sel===e.id?' sel':'')+'" data-id="'+e.id+'"><span class="m">'+esc(e.method)+'</span><span class="p">'+esc(e.path)+(e.replay_of?' <span class="replay">replay of #'+e.replay_of+'</span>':'')+(e.verified?' <span class="replay">'+(e.verified==='valid'?'✓ signed':'✗ '+esc(e.verified))+'</span>':'')+(e.note?' <span class="replay">'+esc(e.note)+'</span>':'')+'</span><span class="'+cls(e.status)+'">'+e.status+'</span><span class="t">'+e.ms+' ms</span></div>'}).join('');
   }
   function show(e){
     sel=e.id; main.classList.add('open'); render();

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,6 +34,10 @@ type tunnelOpts struct {
 	hostHeader              *string
 	allowIP, allowGitHub    *string
 	open, copy              *bool
+	verify, latency, fail   *string
+	verifyStrict            *bool
+	feedback, live          *bool
+	mocks                   *listFlag
 	remotePort, maxVisits   *int
 	expires                 *time.Duration
 	debug                   *bool
@@ -71,8 +77,22 @@ func tunnelFlags(kind string) (*flag.FlagSet, *tunnelOpts) {
 	o.hostHeader = fs.String("host-header", "", "Host header your app receives, e.g. localhost for dev servers that reject other names")
 	o.allowIP = fs.String("allow-ip", "", "only these addresses or CIDR ranges may visit, comma separated")
 	o.allowGitHub = fs.String("allow-github", "", "visitors must sign in with GitHub; comma-separated users, or @org for an organisation")
+	o.verify = fs.String("verify", os.Getenv("PUBLICLOCAL_VERIFY"), "check webhook signatures: stripe:SECRET, github:SECRET, slack:SECRET or shopify:SECRET (env PUBLICLOCAL_VERIFY)")
+	o.verifyStrict = fs.Bool("verify-strict", false, "with --verify, refuse POST/PUT/PATCH requests whose signature fails (401) before they reach your app")
+	o.mocks = &listFlag{}
+	fs.Var(o.mocks, "mock", "answer a path from a file instead of the app: /api/users=users.json, \"POST /pay=201:ok.json\", /old/*=404 (repeatable)")
+	o.latency = fs.String("latency", "", "slow every request down: 800ms, or a range like 200ms-2s")
+	o.fail = fs.String("fail", "", "answer this share of requests with 503, e.g. 10%")
+	o.feedback = fs.Bool("feedback", false, "add a Feedback button to your pages; comments appear in this terminal")
+	o.live = fs.Bool("live", false, "print a private link where teammates can watch requests arrive live")
 	return fs, o
 }
+
+// listFlag collects a flag given several times.
+type listFlag []string
+
+func (l *listFlag) String() string     { return strings.Join(*l, ", ") }
+func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }
 
 func splitList(s string) []string {
 	var out []string
@@ -142,6 +162,11 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 		tunnels[i] = t
 	}
 
+	extras, err := linkExtras(o)
+	if err != nil {
+		return err
+	}
+
 	// The request store feeds the terminal feed, the inspector and the summary.
 	store := inspect.NewStore(500)
 	if o.inbox != "" {
@@ -177,11 +202,24 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 			Tunnels:            tunnels,
 			Logger:             log,
 			CORS:               o.kind == proto.TypeHTTP && *o.cors,
-			CaptureBody:        captureBytes(inspectURL != ""),
+			Verify:             extras.Verify,
+			Mocks:              extras.Mocks,
+			Chaos:              extras.Chaos,
+			Feedback:           extras.Feedback,
+			LiveKey:            extras.LiveKey,
+			OnFeedback: func(f client.Feedback) {
+				who := f.Name
+				if who == "" {
+					who = "a visitor"
+				}
+				// Every comment line is marked, so a visitor cannot fake tunnel output.
+				fmt.Printf("\n💬 Feedback from %s on %s:\n   │ %s\n\n", who, f.Page, strings.ReplaceAll(f.Text, "\n", "\n   │ "))
+			},
+			CaptureBody: captureBytes(inspectURL != ""),
 			OnRequest: func(c client.Captured) {
 				store.Add(c)
 				if !*o.quiet {
-					fmt.Printf("%s  %-6s %-40s %d  %4d ms  %s\n", c.Time.Format("15:04:05"), c.Method, clip(c.Path, 40), c.Status, c.Duration.Milliseconds(), c.Remote)
+					fmt.Printf("%s  %-6s %-40s %d  %4d ms  %s%s\n", c.Time.Format("15:04:05"), c.Method, clip(c.Path, 40), c.Status, c.Duration.Milliseconds(), c.Remote, requestTags(c))
 				}
 			},
 			OnReady: func(infos []proto.TunnelInfo) {
@@ -206,6 +244,9 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 						saveLink(linkKey(srv, locals[i]), storedLink{Name: info.Name, Claim: info.Claim, Expires: info.Expires})
 					}
 					fmt.Printf("Forwarding %s -> %s\n", info.URL, locals[i])
+					if extras.LiveKey != "" && info.Type == proto.TypeHTTP {
+						fmt.Printf("Live view:  %s (share with teammates; paths only)\n", client.LiveURL(info.URL, extras.LiveKey))
+					}
 					if *o.qr {
 						if q, err := qrcode.New(info.URL, qrcode.Medium); err == nil {
 							fmt.Print("\n" + q.ToSmallString(false) + "\n")
@@ -234,6 +275,7 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 				if o.kind == proto.TypeHTTP && *o.hostHeader != "" {
 					notes = append(notes, "Host header "+*o.hostHeader)
 				}
+				notes = append(notes, extras.notes...)
 				if len(notes) > 0 {
 					fmt.Println("Link is " + strings.Join(notes, ", "))
 				}
@@ -315,4 +357,94 @@ func clip(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// extras holds the client-side link features: signature checks, mocks,
+// simulated bad networks, the feedback button and the live viewer.
+type extras struct {
+	Verify   *client.Verifier
+	Mocks    []client.Mock
+	Chaos    client.Chaos
+	Feedback bool
+	LiveKey  string
+	notes    []string
+}
+
+func linkExtras(o *tunnelOpts) (extras, error) {
+	var x extras
+	if o.kind != proto.TypeHTTP || o.verify == nil {
+		return x, nil
+	}
+	if *o.verify != "" {
+		v, err := client.ParseVerifier(*o.verify)
+		if err != nil {
+			return x, err
+		}
+		v.Strict = *o.verifyStrict
+		x.Verify = v
+		n := "checking " + v.Provider + " signatures"
+		if v.Strict {
+			n += " (refusing bad ones)"
+		}
+		x.notes = append(x.notes, n)
+	} else if *o.verifyStrict {
+		return x, errors.New("--verify-strict needs --verify")
+	}
+	for _, spec := range *o.mocks {
+		m, err := client.ParseMock(spec)
+		if err != nil {
+			return x, err
+		}
+		x.Mocks = append(x.Mocks, m)
+	}
+	if len(x.Mocks) > 0 {
+		x.notes = append(x.notes, fmt.Sprintf("%d mocked path(s)", len(x.Mocks)))
+	}
+	if *o.latency != "" {
+		lo, hi, err := client.ParseLatency(*o.latency)
+		if err != nil {
+			return x, err
+		}
+		x.Chaos.LatencyMin, x.Chaos.LatencyMax = lo, hi
+		x.notes = append(x.notes, "added latency "+*o.latency)
+	}
+	if *o.fail != "" {
+		f, err := client.ParseFailRate(*o.fail)
+		if err != nil {
+			return x, err
+		}
+		x.Chaos.FailRate = f
+		x.notes = append(x.notes, fmt.Sprintf("%.0f%% of requests fail on purpose", f*100))
+	}
+	if *o.feedback {
+		x.Feedback = true
+		x.notes = append(x.notes, "Feedback button on pages")
+	}
+	if *o.live {
+		b := make([]byte, 16)
+		rand.Read(b)
+		x.LiveKey = hex.EncodeToString(b)
+	}
+	return x, nil
+}
+
+// requestTags adds what the extras did to a request's line in the feed.
+func requestTags(c client.Captured) string {
+	var t []string
+	switch {
+	case c.Verified == "valid":
+		t = append(t, "✓ signed")
+	case c.Verified != "":
+		t = append(t, "✗ "+c.Verified)
+	}
+	if c.Mocked {
+		t = append(t, "mock")
+	}
+	if c.Note != "" {
+		t = append(t, c.Note)
+	}
+	if len(t) == 0 {
+		return ""
+	}
+	return "  [" + strings.Join(t, ", ") + "]"
 }

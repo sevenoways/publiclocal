@@ -237,7 +237,7 @@ func TestSSHOptions(t *testing.T) {
 			break
 		}
 	}
-	if link == "" || !strings.Contains(window.String(), "password set") || !strings.Contains(window.String(), "expires in 30m") {
+	if link == "" || !strings.Contains(window.String(), "password set") || !(strings.Contains(window.String(), "valid until") || strings.Contains(window.String(), "expire after 30m")) {
 		t.Fatalf("ssh window: %q", window.String())
 	}
 	u, _ := url.Parse(link)

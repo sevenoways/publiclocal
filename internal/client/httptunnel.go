@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -32,6 +33,9 @@ type Captured struct {
 	Duration time.Duration
 	Remote   string // visitor address, from the server's X-Forwarded-For
 	Bytes    int64  // response body bytes
+	Verified string // --verify result: "valid" or why it failed
+	Mocked   bool   // answered by --mock, not the app
+	Note     string // e.g. "simulated failure", "+800ms"
 
 	ReqHeader     http.Header
 	ReqBody       []byte
@@ -93,6 +97,9 @@ func newHTTPTunnel(idx int, t Tunnel, cfg Config) *httpTunnel {
 					pr.Out.Header.Set(h, v)
 				}
 			}
+			if cfg.Feedback && pr.In.Method == http.MethodGet && strings.Contains(pr.In.Header.Get("Accept"), "text/html") {
+				pr.Out.Header.Del("Accept-Encoding") // the widget goes into plain HTML
+			}
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			cfg.Logger.Warn("cannot reach local service", "addr", t.Local, "err", err)
@@ -100,13 +107,18 @@ func newHTTPTunnel(idx int, t Tunnel, cfg Config) *httpTunnel {
 			http.Error(w, "publiclocal: local service unavailable", http.StatusBadGateway)
 		},
 	}
-	if cfg.CORS {
+	if cfg.CORS || cfg.Feedback {
 		proxy.ModifyResponse = func(resp *http.Response) error {
-			setCORS(resp.Header, resp.Request.Header.Get("Origin"))
+			if cfg.CORS {
+				setCORS(resp.Header, resp.Request.Header.Get("Origin"))
+			}
+			if cfg.Feedback {
+				return injectWidget(resp)
+			}
 			return nil
 		}
 	}
-	h := &tunnelHandler{idx: idx, local: t.Local, proxy: proxy, cfg: cfg}
+	h := &tunnelHandler{idx: idx, local: t.Local, proxy: proxy, cfg: cfg, live: &liveHub{}, feedback: &feedbackLimiter{}}
 	ht := &httpTunnel{ln: newStreamListener()}
 	ht.srv = &http.Server{Handler: h, ReadHeaderTimeout: 60 * time.Second}
 	go ht.srv.Serve(ht.ln)
@@ -125,19 +137,36 @@ type tunnelHandler struct {
 	local string
 	proxy *httputil.ReverseProxy
 	cfg   Config
+
+	live     *liveHub
+	feedback *feedbackLimiter
 }
 
 func (h *tunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	remote := ""
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		remote = strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	switch {
+	case h.cfg.Feedback && r.URL.Path == feedbackJS:
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		io.WriteString(w, widgetJS)
+		return
+	case h.cfg.Feedback && r.URL.Path == feedbackPath:
+		h.serveFeedback(w, r, remote)
+		return
+	case h.cfg.LiveKey != "" && (r.URL.Path == livePath || r.URL.Path == liveEvents):
+		h.serveLive(w, r)
+		return
+	}
 	if h.cfg.CORS && r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 		setCORS(w.Header(), r.Header.Get("Origin"))
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	start := time.Now()
-	c := Captured{Time: start, Tunnel: h.idx, Local: h.local, Method: r.Method, Path: r.URL.RequestURI(), Host: r.Host}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		c.Remote = strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
+	c := Captured{Time: start, Tunnel: h.idx, Local: h.local, Method: r.Method, Path: r.URL.RequestURI(), Host: r.Host, Remote: remote}
 	limit := h.cfg.CaptureBody
 	if limit > 0 {
 		c.ReqHeader = r.Header.Clone()
@@ -148,7 +177,7 @@ func (h *tunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	cw := &captureWriter{ResponseWriter: w, status: http.StatusOK, buf: &limitedBuffer{limit: limit}}
-	h.proxy.ServeHTTP(cw, r)
+	h.serve(cw, r, &c)
 	c.Status, c.Bytes, c.Duration = cw.status, cw.bytes, time.Since(start)
 	if limit > 0 {
 		c.RespHeader = cw.Header().Clone()
@@ -157,6 +186,51 @@ func (h *tunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.OnRequest != nil {
 		h.cfg.OnRequest(c)
 	}
+	if h.cfg.LiveKey != "" {
+		note := c.Note
+		if c.Verified != "" {
+			note = strings.TrimSpace(note + " signature " + c.Verified)
+		}
+		if c.Mocked {
+			note = strings.TrimSpace(note + " mock")
+		}
+		h.live.publish(LiveEvent{Time: start, Method: c.Method, Path: r.URL.Path, Status: c.Status, Millis: c.Duration.Milliseconds(), Note: note})
+	}
+}
+
+// serve applies --verify, --latency, --fail and --mock, then hands the
+// request to the app.
+func (h *tunnelHandler) serve(w http.ResponseWriter, r *http.Request, c *Captured) {
+	if v := h.cfg.Verify; v != nil {
+		c.Verified = v.verifyRequest(r)
+		if v.Strict && c.Verified != "" && c.Verified != "valid" {
+			http.Error(w, "publiclocal: webhook signature check failed: "+c.Verified, http.StatusUnauthorized)
+			return
+		}
+	}
+	if ch := h.cfg.Chaos; ch.LatencyMax > 0 || ch.LatencyMin > 0 {
+		d := ch.delay()
+		c.Note = "+" + d.Round(time.Millisecond).String()
+		select {
+		case <-time.After(d):
+		case <-r.Context().Done():
+			return
+		}
+	}
+	if fr := h.cfg.Chaos.FailRate; fr > 0 && rand.Float64() < fr {
+		c.Note = strings.TrimSpace(c.Note + " simulated failure")
+		w.Header().Set("PublicLocal-Simulated", "fail")
+		http.Error(w, "publiclocal: simulated failure (--fail)", http.StatusServiceUnavailable)
+		return
+	}
+	for _, m := range h.cfg.Mocks {
+		if m.matches(r) {
+			c.Mocked = true
+			m.serve(w)
+			return
+		}
+	}
+	h.proxy.ServeHTTP(w, r)
 }
 
 func setCORS(h http.Header, origin string) {
