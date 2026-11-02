@@ -1,0 +1,93 @@
+name: PublicLocal tunnel
+description: Expose a port from a GitHub Actions job as a public HTTPS link, for webhook tests and preview links
+author: sevenoways
+branding:
+  icon: globe
+  color: blue
+
+inputs:
+  port:
+    description: Local port to expose (or host:port)
+    required: true
+  server:
+    description: PublicLocal server to use; defaults to the free publiclocal.app
+    required: false
+    default: ""
+  token:
+    description: Server token for a private server (PUBLICLOCAL_TOKEN)
+    required: false
+    default: ""
+  account:
+    description: Login token from `publiclocal login`, for 7-day links, custom domains and reusable names
+    required: false
+    default: ""
+  password:
+    description: Visitors must enter this password
+    required: false
+    default: ""
+  expires:
+    description: Link lifetime, e.g. 2h; defaults to the server's
+    required: false
+    default: ""
+  args:
+    description: Extra client flags, e.g. --allow-github @my-org --note "preview of PR 42"
+    required: false
+    default: ""
+  version:
+    description: Client version to install
+    required: false
+    default: latest
+
+outputs:
+  url:
+    description: The public HTTPS link
+    value: ${{ steps.start.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install publiclocal
+      shell: bash
+      run: |
+        set -eu
+        v="${{ inputs.version }}"
+        if [ "$v" = latest ]; then unset PUBLICLOCAL_VERSION; else export PUBLICLOCAL_VERSION="$v"; fi
+        curl -fsSL https://publiclocal.app/install.sh | BIN_DIR="$RUNNER_TEMP" sh
+        echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+    - name: Start the tunnel
+      id: start
+      shell: bash
+      env:
+        PUBLICLOCAL_SERVER: ${{ inputs.server }}
+        PUBLICLOCAL_TOKEN: ${{ inputs.token }}
+        PUBLICLOCAL_ACCOUNT: ${{ inputs.account }}
+        PUBLICLOCAL_PASSWORD: ${{ inputs.password }}
+        PL_PORT: ${{ inputs.port }}
+        PL_EXPIRES: ${{ inputs.expires }}
+        PL_ARGS: ${{ inputs.args }}
+      run: |
+        set -eu
+        log="$RUNNER_TEMP/publiclocal.log"
+        extra=""
+        [ -n "$PL_EXPIRES" ] && extra="--expires $PL_EXPIRES"
+        # shellcheck disable=SC2086
+        nohup publiclocal http --new --inspect "" --quiet $extra $PL_ARGS "$PL_PORT" > "$log" 2>&1 &
+        echo $! > "$RUNNER_TEMP/publiclocal.pid"
+        for i in $(seq 1 60); do
+          url=$(grep -o 'https://[^ ]*' "$log" | head -1 || true)
+          [ -n "$url" ] && break
+          if ! kill -0 "$(cat "$RUNNER_TEMP/publiclocal.pid")" 2>/dev/null; then cat "$log"; echo "::error::publiclocal exited"; exit 1; fi
+          sleep 1
+        done
+        [ -n "$url" ] || { cat "$log"; echo "::error::no link after 60s"; exit 1; }
+        echo "url=$url" >> "$GITHUB_OUTPUT"
+        echo "PUBLICLOCAL_URL=$url" >> "$GITHUB_ENV"
+        echo "::notice title=PublicLocal::$url"
+        echo "Tunnel: $url -> $PL_PORT"
+    - name: Stop the tunnel
+      if: always()
+      shell: bash
+      run: |
+        pid="$RUNNER_TEMP/publiclocal.pid"
+        if [ -f "$pid" ]; then kill "$(cat "$pid")" 2>/dev/null || true; fi
+        [ -f "$RUNNER_TEMP/publiclocal.log" ] && tail -n 30 "$RUNNER_TEMP/publiclocal.log" || true

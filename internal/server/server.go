@@ -39,8 +39,12 @@ type Config struct {
 
 	ControlAddr string // client sessions, e.g. ":7000"
 	HTTPAddr    string // plain HTTP, e.g. ":80"; empty disables
-	HTTPSAddr   string // HTTPS with Let's Encrypt, e.g. ":443"; empty disables
-	AdminAddr   string // admin API, e.g. "127.0.0.1:7001"; empty disables
+	// Custom domains (signed-in users). LookupTXT is net.DefaultResolver
+	// unless set; MaxDomainsPerAccount defaults to 5.
+	LookupTXT            func(ctx context.Context, name string) ([]string, error)
+	MaxDomainsPerAccount int
+	HTTPSAddr            string // HTTPS with Let's Encrypt, e.g. ":443"; empty disables
+	AdminAddr            string // admin API, e.g. "127.0.0.1:7001"; empty disables
 
 	// Tokens clients must present. Empty means anyone may connect.
 	Tokens []string
@@ -127,10 +131,15 @@ const (
 )
 
 type Server struct {
-	cfg    Config
-	log    *slog.Logger
-	certs  *autocert.Manager
-	scheme string // public scheme for HTTP tunnel URLs
+	cfg         Config
+	log         *slog.Logger
+	certs       *autocert.Manager
+	customCerts *autocert.Manager        // certificates for custom domains
+	domains     map[string]*customDomain // custom names, by host; guarded by mu
+	verifyLimit *rateLimiter             // domain verifications per account
+	certFailMu  sync.Mutex
+	certFail    map[string]time.Time // custom names whose last issuance failed, until when
+	scheme      string               // public scheme for HTTP tunnel URLs
 
 	mu           sync.RWMutex
 	hosts        map[string]*route
@@ -175,6 +184,7 @@ type route struct {
 	limiter *bucket
 	opts    atomic.Pointer[linkOpts]
 	id      string // random per route; scopes visitor sign-ins to this link instance
+	domain  string // custom name attached with --domain, if any; guarded by Server.mu
 
 	requests atomic.Int64
 	bytes    atomic.Int64
@@ -278,10 +288,12 @@ func New(cfg Config) *Server {
 	}
 	s.connLimit = newRateLimiter(cfg.ConnectsPerMinute)
 	s.loginLimit = newRateLimiter(cfg.LoginsPerMinute)
+	s.verifyLimit = newRateLimiter(verifiesPerMinute)
 	s.loadState()
 	if cfg.ScanInterval > 0 {
 		go s.scanLoop()
 	}
+	go s.recheckDomains(context.Background())
 	if cfg.HTTPSAddr != "" {
 		s.scheme = "https"
 		if cfg.CloudflareToken == "" {
@@ -313,14 +325,14 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	case s.cfg.HTTPSAddr == "":
 		s.log.Warn("HTTPS disabled: control connections and tokens are not encrypted")
 	case s.certs != nil:
-		tlsCfg = s.certs.TLSConfig()
+		tlsCfg = s.certSplitter(s.certs.GetCertificate)
 	default:
 		wc, err := newWildcard(s.cfg.Domain, s.cfg.CertDir, s.cfg.ACMEEmail, s.cfg.CloudflareToken, s.log)
 		if err != nil {
 			return fmt.Errorf("wildcard certificate: %w", err)
 		}
 		go wc.renewLoop(ctx)
-		tlsCfg = &tls.Config{GetCertificate: wc.getCertificate}
+		tlsCfg = s.certSplitter(wc.getCertificate)
 	}
 
 	errc := make(chan error, 4)
@@ -345,6 +357,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 		if s.certs != nil {
 			h = s.certs.HTTPHandler(h) // answers ACME HTTP-01 challenges, passes the rest through
+		}
+		if s.customCerts != nil {
+			h = s.customCerts.HTTPHandler(h)
 		}
 		hs := &http.Server{Addr: s.cfg.HTTPAddr, Handler: h, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 		closers = append(closers, hs)
@@ -451,6 +466,9 @@ func (s *Server) hostPolicy(_ context.Context, host string) error {
 			return nil
 		}
 	}
+	if s.customHostPolicy(context.Background(), host) == nil {
+		return nil
+	}
 	return fmt.Errorf("publiclocal: no active tunnel for %q", host)
 }
 
@@ -483,6 +501,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sub, ok := s.subdomain(host)
+	custom := false
+	if !ok {
+		s.mu.RLock()
+		if d := s.domainVerified(host); d != nil && d.Sub != "" {
+			sub, ok, custom = d.Sub, true, true
+		}
+		s.mu.RUnlock()
+	}
 	if !ok {
 		http.Error(w, "publiclocal: no tunnel here", http.StatusNotFound)
 		return
@@ -498,6 +524,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	rt := s.hosts[sub]
 	res := s.reservations[sub]
+	if custom && rt != nil && rt.domain != host {
+		rt = nil // the link is up again, but without this name
+	}
 	s.mu.RUnlock()
 	if rt == nil {
 		if res != nil && !res.expired(time.Now()) {
@@ -883,8 +912,23 @@ func (sess *session) addHTTP(idx int, t proto.TunnelReq) (proto.TunnelInfo, erro
 	}
 	s.hosts[sub] = rt
 	sess.subs = append(sess.subs, sub)
+	if t.Domain != "" {
+		if err := s.attachDomain(t.Domain, sub, sess.account); err != nil {
+			delete(s.hosts, sub)
+			sess.subs = sess.subs[:len(sess.subs)-1]
+			if len(sess.newSubs) > 0 && sess.newSubs[len(sess.newSubs)-1] == sub {
+				if res.timer != nil {
+					res.timer.Stop()
+				}
+				delete(s.reservations, sub)
+				sess.newSubs = sess.newSubs[:len(sess.newSubs)-1]
+			}
+			return proto.TunnelInfo{}, err
+		}
+		rt.domain = strings.ToLower(t.Domain)
+	}
 	s.saveLocked()
-	return proto.TunnelInfo{Type: proto.TypeHTTP, URL: s.httpURL(sub), Name: sub, Claim: claim, Expires: res.Expires}, nil
+	return proto.TunnelInfo{Type: proto.TypeHTTP, URL: s.httpURL(sub), Name: sub, Claim: claim, Expires: res.Expires, Domain: rt.domain}, nil
 }
 
 // countLinks counts live reservations matching f. Callers hold s.mu.

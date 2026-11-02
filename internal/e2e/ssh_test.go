@@ -149,6 +149,7 @@ func TestSSHLimitsAndRefusals(t *testing.T) {
 
 	// A second session from the same network is refused with a message.
 	c2, _ := net.Dial("tcp", sshAddr)
+	c2.SetDeadline(time.Now().Add(20 * time.Second))
 	cc, chans, reqs, err := ssh.NewClientConn(c2, "publiclocal", &ssh.ClientConfig{User: "x", HostKeyCallback: ssh.InsecureIgnoreHostKey()})
 	if err != nil {
 		t.Fatal(err)

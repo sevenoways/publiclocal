@@ -33,6 +33,7 @@ Usage:
   publiclocal login                                        sign in with GitHub for 7-day links
   publiclocal links                                         your links and when they expire
   publiclocal extend  <link>                                give a link another 7 days
+  publiclocal domains add|verify|list|remove [host]         use your own domain name for links
   publiclocal logout
   publiclocal mcp     [flags]                               MCP server for AI assistants (Claude, Cursor, Codex...)
   publiclocal server  --domain tunnel.example.com [flags]   run your own server
@@ -77,6 +78,8 @@ func main() {
 		err = runLinks(os.Args[2:])
 	case "extend":
 		err = runExtend(os.Args[2:])
+	case "domains":
+		err = runDomains(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("publiclocal", version)
 	case "help", "-h", "--help":

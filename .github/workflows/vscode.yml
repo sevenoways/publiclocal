@@ -1,0 +1,31 @@
+name: VS Code extension
+
+on:
+  push:
+    tags: ["vscode-v*"]
+  pull_request:
+    paths: [vscode/**]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run compile
+      - run: npx vsce package --no-dependencies
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vsix
+          path: vscode/*.vsix
+      - name: Publish to the marketplace
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        run: npx vsce publish --no-dependencies -p "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}

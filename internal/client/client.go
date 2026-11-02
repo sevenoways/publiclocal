@@ -32,6 +32,7 @@ type Tunnel struct {
 	HostHeader  string        // HTTP only; Host header the local app receives
 	AllowIPs    []string      // HTTP only; visitor addresses or CIDR ranges allowed in
 	AllowGitHub []string      // HTTP only; GitHub users, or "@org", who may view the link
+	Domain      string        // HTTP only; a verified custom name to attach, e.g. demo.example.com
 
 	// Claim takes back a link from an earlier run. The server returns it in
 	// TunnelInfo; callers may store it to reuse a link across restarts.
@@ -141,7 +142,7 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{
 			Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.Claim, Password: t.Password,
 			MaxAge: int64(t.MaxAge / time.Second), MaxVisitors: t.MaxVisitors, Note: t.Note,
-			HostHeader: t.HostHeader, AllowIPs: t.AllowIPs, AllowGitHub: t.AllowGitHub,
+			HostHeader: t.HostHeader, AllowIPs: t.AllowIPs, AllowGitHub: t.AllowGitHub, Domain: t.Domain,
 		})
 	}
 	ctrl.SetDeadline(time.Now().Add(15 * time.Second))

@@ -1,0 +1,56 @@
+{
+  "name": "publiclocal",
+  "displayName": "PublicLocal: share localhost",
+  "description": "Share a local port as a public HTTPS link in one click. Open-source ngrok alternative with webhook replay, password links and GitHub sign-in.",
+  "version": "1.4.0",
+  "publisher": "sevenoways",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": { "type": "git", "url": "https://github.com/sevenoways/publiclocal", "directory": "vscode" },
+  "homepage": "https://publiclocal.app",
+  "bugs": { "url": "https://github.com/sevenoways/publiclocal/issues" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other", "Testing"],
+  "keywords": ["tunnel", "ngrok", "localhost", "webhook", "share", "https", "port forwarding", "expose"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "publiclocal.share", "title": "Share Port", "category": "PublicLocal", "icon": "$(globe)" },
+      { "command": "publiclocal.stop", "title": "Stop Sharing", "category": "PublicLocal" },
+      { "command": "publiclocal.copy", "title": "Copy Link", "category": "PublicLocal" },
+      { "command": "publiclocal.open", "title": "Open Link in Browser", "category": "PublicLocal" },
+      { "command": "publiclocal.inspector", "title": "Open Request Inspector", "category": "PublicLocal" },
+      { "command": "publiclocal.showLog", "title": "Show Request Feed", "category": "PublicLocal" }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "publiclocal.stop", "when": "publiclocal.active" },
+        { "command": "publiclocal.copy", "when": "publiclocal.active" },
+        { "command": "publiclocal.open", "when": "publiclocal.active" },
+        { "command": "publiclocal.inspector", "when": "publiclocal.active" }
+      ]
+    },
+    "configuration": {
+      "title": "PublicLocal",
+      "properties": {
+        "publiclocal.path": { "type": "string", "default": "publiclocal", "description": "Path to the publiclocal binary." },
+        "publiclocal.server": { "type": "string", "default": "", "description": "Your own server (host:port). Empty uses the free publiclocal.app." },
+        "publiclocal.extraArgs": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Extra flags for every tunnel, e.g. [\"--allow-github\", \"@my-org\"]." },
+        "publiclocal.askForOptions": { "type": "boolean", "default": true, "description": "Ask for a password or other options each time a port is shared." }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "^5.4.0"
+  }
+}

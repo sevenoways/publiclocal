@@ -33,6 +33,8 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **GitHub sign-in to view** (`--allow-github anna,@my-org`): only the people or organisation members you name get in
 - **Webhook inbox**: `publiclocal catch` records every request with nothing running locally; `publiclocal replay --to 3000` sends them to your app later
 - **`--host-header localhost`** for Vite, Django, Rails and other dev servers that reject unknown hosts; `--allow-ip` to limit visitors by address
+- **Your own domain, free**: `publiclocal domains add demo.yourco.com`, two DNS records, then `--domain demo.yourco.com`; certificates are automatic
+- **VS Code extension** with a Share button, and a **GitHub Action** (`uses: sevenoways/publiclocal/action@v1`) for webhook tests and PR preview links in CI
 - **Webhook signature checks**: `--verify stripe:whsec_...` (also `github`, `slack`, `shopify`) marks every webhook ✓ or ✗; `--verify-strict` refuses bad ones
 - **Mock responses**: `--mock /api/users=users.json` answers paths from files, so demos work before the backend does
 - **Bad-network simulation**: `--latency 200ms-2s` and `--fail 10%` show how your app copes with a slow or flaky connection
@@ -115,6 +117,7 @@ publiclocal catch                         # webhook inbox; later: publiclocal re
 publiclocal http --verify stripe:whsec_... 3000  # check webhook signatures
 publiclocal http --mock /api/users=users.json 3000  # answer a path from a file
 publiclocal http --feedback --live 3000    # comments from visitors, live view for teammates
+publiclocal domains add demo.example.com   # then: publiclocal http --domain demo.example.com 3000
 publiclocal tcp 22                         # tcp://tunnel.example.com:1xxxx
 publiclocal tcp --remote-port 15432 5432   # fixed public port
 ```
@@ -126,7 +129,12 @@ publiclocal tcp --remote-port 15432 5432   # fixed public port
 | Linux / macOS | `curl -fsSL https://publiclocal.app/install.sh \| sh` |
 | Windows (PowerShell) | `irm https://publiclocal.app/install.ps1 \| iex` |
 | Docker | `docker pull ghcr.io/sevenoways/publiclocal` |
+| Homebrew | `brew install sevenoways/tap/publiclocal` |
+| Scoop | `scoop bucket add publiclocal https://github.com/sevenoways/scoop-bucket && scoop install publiclocal` |
+| winget | `winget install sevenoways.PublicLocal` |
 | Go | `go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest` |
+| VS Code | [PublicLocal: share localhost](https://marketplace.visualstudio.com/items?itemName=sevenoways.publiclocal) |
+| GitHub Actions | [`sevenoways/publiclocal/action@v1`](action/README.md) |
 
 ## Use it from AI assistants (MCP)
 

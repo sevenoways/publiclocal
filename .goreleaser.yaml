@@ -18,3 +18,51 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+# Package managers. The tap and bucket are repositories under the same
+# account; goreleaser pushes a formula/manifest there on every release.
+brews:
+  - skip_upload: "{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}"
+    repository:
+      owner: sevenoways
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://publiclocal.app
+    description: "Open-source ngrok alternative: share localhost with a public HTTPS link"
+    license: MIT
+    test: |
+      system "#{bin}/publiclocal", "version"
+    install: |
+      bin.install "publiclocal"
+
+scoops:
+  - skip_upload: "{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}"
+    repository:
+      owner: sevenoways
+      name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://publiclocal.app
+    description: "Open-source ngrok alternative: share localhost with a public HTTPS link"
+    license: MIT
+
+winget:
+  - skip_upload: "{{ if .Env.TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}"
+    publisher: sevenoways
+    name: PublicLocal
+    package_identifier: sevenoways.PublicLocal
+    publisher_url: https://sevenoways.com
+    short_description: "Open-source ngrok alternative: share localhost with a public HTTPS link"
+    license: MIT
+    homepage: https://publiclocal.app
+    repository:
+      owner: sevenoways
+      name: winget-pkgs
+      branch: "publiclocal-{{ .Version }}"
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master

@@ -61,7 +61,7 @@ func (s *Server) loginEnabled() bool { return s.cfg.GitHubClientID != "" }
 // It reports whether it handled the request.
 func (s *Server) serveAccountAPI(w http.ResponseWriter, r *http.Request) bool {
 	switch r.URL.Path {
-	case "/api/login/start", "/api/login/poll", "/login", "/auth/callback", "/api/me", "/api/extend", "/api/logout", "/visitor-login":
+	case "/api/login/start", "/api/login/poll", "/login", "/auth/callback", "/api/me", "/api/extend", "/api/logout", "/visitor-login", "/api/domains", "/api/domains/verify", "/api/domains/remove":
 	default:
 		return false
 	}
@@ -95,6 +95,8 @@ func (s *Server) serveAccountAPI(w http.ResponseWriter, r *http.Request) bool {
 		s.extend(w, r)
 	case "/api/logout":
 		s.logout(w, r)
+	case "/api/domains", "/api/domains/verify", "/api/domains/remove":
+		s.domainsAPI(w, r)
 	}
 	return true
 }

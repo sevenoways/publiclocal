@@ -112,16 +112,18 @@ type account struct {
 
 // persisted is what the state file holds.
 type persisted struct {
-	CookieKey    string                  `json:"cookie_key"`
-	Reservations map[string]*reservation `json:"reservations"`
-	Accounts     map[string]*account     `json:"accounts"`
-	History      map[string]*reservation `json:"history,omitempty"` // expired links, for their status pages
+	CookieKey    string                   `json:"cookie_key"`
+	Reservations map[string]*reservation  `json:"reservations"`
+	Accounts     map[string]*account      `json:"accounts"`
+	History      map[string]*reservation  `json:"history,omitempty"` // expired links, for their status pages
+	Domains      map[string]*customDomain `json:"domains,omitempty"`
 }
 
 func (s *Server) loadState() {
 	s.reservations = map[string]*reservation{}
 	s.accounts = map[string]*account{}
 	s.history = map[string]*reservation{}
+	s.domains = map[string]*customDomain{}
 	s.dirty = make(chan struct{}, 1)
 	var p persisted
 	if s.cfg.StateFile != "" {
@@ -150,6 +152,9 @@ func (s *Server) loadState() {
 	}
 	if p.Accounts != nil {
 		s.accounts = p.Accounts
+	}
+	if p.Domains != nil {
+		s.domains = p.Domains
 	}
 	for sub, r := range p.History {
 		if now.Sub(r.Expires) < historyTTL {
@@ -190,7 +195,7 @@ func (s *Server) Flush() {
 
 func (s *Server) writeState() {
 	s.mu.RLock()
-	b, err := json.MarshalIndent(persisted{CookieKey: hex.EncodeToString(s.cookieKey), Reservations: s.reservations, Accounts: s.accounts, History: s.history}, "", "  ")
+	b, err := json.MarshalIndent(persisted{CookieKey: hex.EncodeToString(s.cookieKey), Reservations: s.reservations, Accounts: s.accounts, History: s.history, Domains: s.domains}, "", "  ")
 	s.mu.RUnlock()
 	if err != nil {
 		s.log.Error("cannot encode state", "err", err)

@@ -58,6 +58,9 @@ type TunnelReq struct {
 	// AllowGitHub makes visitors sign in with GitHub; entries are user names,
 	// or "@org" for members of an organisation.
 	AllowGitHub []string `json:"allow_github,omitempty"`
+	// Domain attaches the link to a custom name the signed-in user has
+	// verified, e.g. demo.example.com.
+	Domain string `json:"domain,omitempty"`
 	// Claim takes back a link this client was given earlier, e.g. after a
 	// reconnect. It is the Claim from that link's TunnelInfo.
 	Claim string `json:"claim,omitempty"`
@@ -73,6 +76,7 @@ type TunnelInfo struct {
 	URL     string    `json:"url"`
 	Name    string    `json:"name,omitempty"`   // subdomain of an HTTP tunnel
 	Claim   string    `json:"claim,omitempty"`  // secret for taking the link back
+	Domain  string    `json:"domain,omitempty"` // custom name the link also answers on
 	Expires time.Time `json:"expires,omitzero"` // zero means the link does not expire
 }
 

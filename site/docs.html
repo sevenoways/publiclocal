@@ -30,9 +30,9 @@
 
 <main class="wrap prose">
   <h1>Documentation</h1>
-  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 31 October 2026 · v1.3</span></p>
+  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 2 November 2026 · v1.4</span></p>
   <nav class="toc" aria-label="On this page">
-    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#gate">GitHub sign-in</a><a href="#catch">Webhook inbox</a><a href="#verify">Signature checks</a><a href="#mock">Mocks &amp; bad networks</a><a href="#feedback">Feedback &amp; live view</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#gate">GitHub sign-in</a><a href="#catch">Webhook inbox</a><a href="#verify">Signature checks</a><a href="#mock">Mocks &amp; bad networks</a><a href="#feedback">Feedback &amp; live view</a><a href="#domains">Your own domain</a><a href="#vscode">VS Code</a><a href="#action">GitHub Action</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
 
   <h2 id="install">Install</h2>
@@ -46,8 +46,16 @@ irm https://publiclocal.app/install.ps1 | iex
 <span class="dim"># Docker</span>
 docker run --rm --network host ghcr.io/sevenoways/publiclocal http 3000
 
+<span class="dim"># Homebrew (macOS, Linux)</span>
+brew install sevenoways/tap/publiclocal
+
+<span class="dim"># Scoop or winget (Windows)</span>
+scoop bucket add publiclocal https://github.com/sevenoways/scoop-bucket &amp;&amp; scoop install publiclocal
+winget install sevenoways.PublicLocal
+
 <span class="dim"># Go</span>
 go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest</pre>
+  <p>There is also a <a href="#vscode">VS Code extension</a> and a <a href="#action">GitHub Action</a>.</p>
   <p>Both installers download the build for your system from <a href="https://github.com/sevenoways/publiclocal/releases/latest">GitHub Releases</a> and verify its SHA-256 checksum before installing. Run the same command again to update.</p>
 
   <h2 id="ssh">No install: use SSH</h2>
@@ -130,6 +138,31 @@ Live view:  https://k7xq2m.publiclocal.app/.publiclocal/live?k=9f2c... (share wi
    The second plan's button is cut off on my phone.</pre>
   <p><code>--feedback</code> adds a small Feedback button to your app's pages. Visitors write a comment and it appears in your terminal (pages are left untouched when they stream or are over 5 MB), with the page they were on. Nothing is stored anywhere else. <code>--live</code> prints a private link where teammates watch requests arrive as they happen. It shows only method, path, status and time, never headers, bodies or query strings, so avoid it if your paths contain secrets such as reset tokens. Both follow the link's password, IP and GitHub rules.</p>
 
+  <h2 id="domains">Links on your own domain</h2>
+<pre class="block"><span class="dim">$</span> publiclocal domains add demo.example.com
+Add these two DNS records for demo.example.com:
+
+  demo.example.com.            CNAME  publiclocal.app.
+  _publiclocal.demo.example.com. TXT    "publiclocal-verify=1e9b7f54…"
+
+<span class="dim">$</span> publiclocal domains verify demo.example.com
+<span class="dim">$</span> publiclocal http --domain demo.example.com 3000
+Forwarding https://k7xq2m.publiclocal.app -&gt; 127.0.0.1:3000
+Also at     https://demo.example.com</pre>
+  <p>Signed-in users can serve a link on a name they own, free. Add the name, set the two DNS records (the TXT record proves the name is yours; the CNAME sends visitors here), verify, and pass <code>--domain</code> when you share. The server gets a Let's Encrypt certificate for the name on the first visit, so allow a minute the first time. Up to 5 names per account; a name attaches to one live link at a time. If the name is proxied through Cloudflare, switch the proxy off (grey cloud) for it. The warning page, password and GitHub sign-in work on your name exactly as on the link.</p>
+
+  <h2 id="vscode">VS Code extension</h2>
+  <p>Install <a href="https://marketplace.visualstudio.com/items?itemName=sevenoways.publiclocal">PublicLocal for VS Code</a> and run <strong>PublicLocal: Share Port</strong> from the command palette, or click <em>Share</em> in the status bar. It asks for the port and who may open the link (anyone, a password, GitHub sign-in, or custom flags), then shows the link in the status bar with a live request count. Click it to copy, open, see the request feed or open the inspector. The extension drives the normal <code>publiclocal</code> client, so everything on this page applies; set <code>publiclocal.server</code> for your own server.</p>
+
+  <h2 id="action">GitHub Action</h2>
+<pre class="block">- uses: sevenoways/publiclocal/action@v1
+  id: tunnel
+  with:
+    port: 3000
+    expires: 2h
+- run: echo "Preview at ${{ steps.tunnel.outputs.url }}"</pre>
+  <p>Expose a port from a job: run webhook tests against a real HTTPS URL, or post a preview link on each pull request. The link is in the <code>url</code> output and in <code>$PUBLICLOCAL_URL</code>, and the tunnel stops when the job ends. Inputs: <code>port</code>, <code>password</code>, <code>expires</code>, <code>args</code> (any client flags, e.g. <code>--allow-github @my-org</code>), <code>account</code> (your login token, for 7-day links and custom domains), and <code>server</code>/<code>token</code> for your own server. <a href="https://github.com/sevenoways/publiclocal/tree/main/action">Full README</a>.</p>
+
   <h2 id="devservers">Dev servers that reject the tunnel's address</h2>
   <p>Vite, webpack, Django (<code>ALLOWED_HOSTS</code>), Rails (<code>config.hosts</code>) and others refuse requests whose Host isn't one they expect. <code>--host-header localhost</code> (or <code>localhost:5173</code>) sends them the name they want; the public name stays in <code>X-Forwarded-Host</code>. <code>--open</code> opens the link in your browser and <code>--copy</code> puts it on the clipboard as soon as it is ready. The inspector's <em>Download HAR</em> button saves every captured request for a bug report or your browser's developer tools.</p>
 
@@ -153,7 +186,7 @@ Live view:  https://k7xq2m.publiclocal.app/.publiclocal/live?k=9f2c... (share wi
   <div class="table-wrap"><table>
     <thead><tr><th>Command</th><th>What it does</th></tr></thead>
     <tbody>
-    <tr><td><code>publiclocal http &lt;port&gt; [port...]</code></td><td>Public HTTPS links for local HTTP servers. Flags: <code>--password</code>, <code>--allow-github</code>, <code>--allow-ip</code>, <code>--host-header</code>, <code>--open</code>, <code>--copy</code>, <code>--max-visits</code>, <code>--expires</code>, <code>--note</code>, <code>--cors</code>, <code>--qr</code>, <code>--inspect</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
+    <tr><td><code>publiclocal http &lt;port&gt; [port...]</code></td><td>Public HTTPS links for local HTTP servers. Flags: <code>--password</code>, <code>--allow-github</code>, <code>--allow-ip</code>, <code>--domain</code>, <code>--host-header</code>, <code>--verify</code>, <code>--mock</code>, <code>--latency</code>, <code>--fail</code>, <code>--feedback</code>, <code>--live</code>, <code>--open</code>, <code>--copy</code>, <code>--max-visits</code>, <code>--expires</code>, <code>--note</code>, <code>--cors</code>, <code>--qr</code>, <code>--inspect</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
     <tr><td><code>publiclocal share &lt;path&gt;</code></td><td>Serve a folder or file from this computer and share it. Same flags as <code>http</code>.</td></tr>
     <tr><td><code>publiclocal catch</code></td><td>A link that answers and records every request (webhook inbox). <code>--status</code>, <code>--body</code>, plus the link flags.</td></tr>
     <tr><td><code>publiclocal replay --to &lt;port&gt;</code></td><td>Send caught requests to your app. <code>--list</code>, <code>--id</code>, <code>--last</code>, <code>--file</code>.</td></tr>
@@ -161,6 +194,7 @@ Live view:  https://k7xq2m.publiclocal.app/.publiclocal/live?k=9f2c... (share wi
     <tr><td><code>publiclocal login</code> / <code>logout</code></td><td>Sign in with GitHub for 7-day links; sign out and revoke the token.</td></tr>
     <tr><td><code>publiclocal links</code></td><td>List your links, whether they are online, and when they expire.</td></tr>
     <tr><td><code>publiclocal extend &lt;link&gt;</code></td><td>Push a link's expiry to 7 days from now (signed in).</td></tr>
+    <tr><td><code>publiclocal domains add|verify|list|remove</code></td><td>Use your own domain name for links (signed in). See <a href="#domains">your own domain</a>.</td></tr>
     <tr><td><code>publiclocal mcp</code></td><td>Run the MCP server for AI assistants. Flags: <code>--allow-ports 3000,5173</code>, <code>--max-tunnels</code>.</td></tr>
     <tr><td><code>publiclocal server</code></td><td>Run your own tunnel server. See <a href="#self-host">self-hosting</a>.</td></tr>
     <tr><td><code>publiclocal admin</code></td><td>On your own server: list, links, forget, kill, ban, suspend, flags, scan.</td></tr>

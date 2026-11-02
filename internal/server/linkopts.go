@@ -256,7 +256,7 @@ func (s *Server) githubGate(w http.ResponseWriter, r *http.Request, host, sub st
 	// hash travels through the sign-in and is part of the ticket's signature.
 	nonce := newSecret()
 	http.SetCookie(w, &http.Cookie{Name: bindCookie, Value: nonce, Path: viewerAuthPath, MaxAge: int(loginTTL.Seconds()), HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode})
-	q := url.Values{"link": {sub}, "next": {safeNext(r.URL.RequestURI())}, "bind": {hashSecret(nonce)}}
+	q := url.Values{"link": {sub}, "host": {host}, "next": {safeNext(r.URL.RequestURI())}, "bind": {hashSecret(nonce)}}
 	http.Redirect(w, r, s.baseURL()+"/visitor-login?"+q.Encode(), http.StatusSeeOther)
 	return false
 }
@@ -320,6 +320,7 @@ func stripCookie(r *http.Request, name string) {
 type pendingVisitor struct {
 	sub, next string
 	bind      string // hash of the link-host cookie the ticket is bound to
+	host      string // where the visitor came from: the link's name or its custom domain
 	ipKey     string
 	browser   string // hash of the cookie set on the bare domain before GitHub
 	created   time.Time
@@ -334,12 +335,19 @@ func (s *Server) visitorLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sub := strings.ToLower(r.URL.Query().Get("link"))
+	host := strings.ToLower(r.URL.Query().Get("host"))
 	s.mu.RLock()
 	rt := s.hosts[sub]
+	// The sign-in goes back to the host the visitor used: the link's own
+	// name, or a custom domain attached to this very link.
+	okHost := rt != nil && (host == "" || host == sub+"."+s.cfg.Domain || (rt.domain != "" && host == rt.domain))
 	s.mu.RUnlock()
-	if rt == nil || !rt.opts.Load().needsGitHub {
+	if rt == nil || !rt.opts.Load().needsGitHub || !okHost {
 		loginResult(w, http.StatusNotFound, "This link is not available", "It may have expired or no longer need sign-in.")
 		return
+	}
+	if host == "" {
+		host = sub + "." + s.cfg.Domain
 	}
 	bind := r.URL.Query().Get("bind")
 	if len(bind) != 64 {
@@ -363,7 +371,7 @@ func (s *Server) visitorLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many sign-ins in progress; try again shortly", http.StatusServiceUnavailable)
 		return
 	}
-	s.visitors[id] = &pendingVisitor{sub: sub, next: safeNext(r.URL.Query().Get("next")), bind: bind, ipKey: key, browser: hashSecret(nonce), created: now}
+	s.visitors[id] = &pendingVisitor{sub: sub, host: host, next: safeNext(r.URL.Query().Get("next")), bind: bind, ipKey: key, browser: hashSecret(nonce), created: now}
 	s.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: visitorCookie, Value: nonce, Path: "/", MaxAge: int(loginTTL.Seconds()), HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode})
 	q := url.Values{
@@ -416,8 +424,8 @@ func (s *Server) visitorCallback(w http.ResponseWriter, r *http.Request, id, cod
 			v.orgs = append(v.orgs, org)
 		}
 	}
-	host := p.sub + "." + s.cfg.Domain
+	host := p.host
 	ticket := s.signViewer("ticket", viewerScope(host, rt)+":"+p.bind, v, time.Now().Add(ticketTTL))
 	q := url.Values{"t": {ticket}, "next": {p.next}}
-	http.Redirect(w, r, s.httpURL(p.sub)+viewerAuthPath+"?"+q.Encode(), http.StatusSeeOther)
+	http.Redirect(w, r, s.scheme+"://"+host+viewerAuthPath+"?"+q.Encode(), http.StatusSeeOther)
 }

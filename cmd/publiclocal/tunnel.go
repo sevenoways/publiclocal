@@ -38,6 +38,7 @@ type tunnelOpts struct {
 	verifyStrict            *bool
 	feedback, live          *bool
 	mocks                   *listFlag
+	domain                  *string
 	remotePort, maxVisits   *int
 	expires                 *time.Duration
 	debug                   *bool
@@ -84,6 +85,7 @@ func tunnelFlags(kind string) (*flag.FlagSet, *tunnelOpts) {
 	o.latency = fs.String("latency", "", "slow every request down: 800ms, or a range like 200ms-2s")
 	o.fail = fs.String("fail", "", "answer this share of requests with 503, e.g. 10%")
 	o.feedback = fs.Bool("feedback", false, "add a Feedback button to your pages; comments appear in this terminal")
+	o.domain = fs.String("domain", "", "serve the link on your own verified name too, e.g. demo.example.com (see publiclocal domains)")
 	o.live = fs.Bool("live", false, "print a private link where teammates can watch requests arrive live")
 	return fs, o
 }
@@ -147,6 +149,9 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 		} else {
 			t.Password, t.Note, t.MaxVisitors, t.MaxAge = *o.password, *o.note, *o.maxVisits, *o.expires
 			t.HostHeader, t.AllowIPs, t.AllowGitHub = *o.hostHeader, splitList(*o.allowIP), splitList(*o.allowGitHub)
+			if o.domain != nil && len(locals) == 1 {
+				t.Domain = *o.domain
+			}
 			if len(locals) == 1 {
 				t.Subdomain = *o.sub
 				if *o.link != "" {
@@ -244,6 +249,9 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 						saveLink(linkKey(srv, locals[i]), storedLink{Name: info.Name, Claim: info.Claim, Expires: info.Expires})
 					}
 					fmt.Printf("Forwarding %s -> %s\n", info.URL, locals[i])
+					if info.Domain != "" {
+						fmt.Printf("Also at     https://%s\n", info.Domain)
+					}
 					if extras.LiveKey != "" && info.Type == proto.TypeHTTP {
 						fmt.Printf("Live view:  %s (share with teammates; paths only)\n", client.LiveURL(info.URL, extras.LiveKey))
 					}

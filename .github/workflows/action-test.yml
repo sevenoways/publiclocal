@@ -1,0 +1,21 @@
+name: Action
+
+on:
+  push:
+    branches: [main]
+    paths: [action/**, .github/workflows/action-test.yml]
+  pull_request:
+    paths: [action/**]
+
+jobs:
+  tunnel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - run: python3 -m http.server 8123 --directory action &
+      - uses: ./action
+        id: tunnel
+        with:
+          port: 8123
+          expires: 10m
+      - run: curl -fsS -H "PublicLocal-Skip-Warning: 1" "${{ steps.tunnel.outputs.url }}/README.md" | head -3
