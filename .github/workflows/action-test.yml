@@ -18,4 +18,5 @@ jobs:
         with:
           port: 8123
           expires: 10m
-      - run: curl -fsS -H "PublicLocal-Skip-Warning: 1" "${{ steps.tunnel.outputs.url }}/README.md" | head -3
+      - run: |
+          curl -fsS -H "PublicLocal-Skip-Warning: 1" "${{ steps.tunnel.outputs.url }}/README.md" | head -3
