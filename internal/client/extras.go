@@ -633,3 +633,98 @@ tr.append(td(t.toLocaleTimeString(),'m'),td(e.method),td(e.path+(e.note?'  ['+e.
 rows.insertBefore(tr,rows.firstChild);while(rows.children.length>300)rows.removeChild(rows.lastChild)}
 var es=new EventSource('` + liveEvents + `'+location.search);es.onopen=function(){dot.className='on'};es.onerror=function(){dot.className=''};
 es.onmessage=function(m){try{add(JSON.parse(m.data))}catch(_){}}})();</script></body></html>`
+
+// ---------------------------------------------------------------------------
+// Edge rules (--header, --rewrite, --block)
+
+// Rules change requests before they reach the app.
+type Rules struct {
+	Headers  http.Header   // added to every request
+	Rewrites []PathRewrite // first matching prefix wins
+	Blocks   []string      // paths answered 403; a trailing * covers everything under
+}
+
+type PathRewrite struct{ From, To string }
+
+// ParseHeader reads "Name: value".
+func ParseHeader(spec string) (string, string, error) {
+	k, v, ok := strings.Cut(spec, ":")
+	k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+	if !ok || k == "" || strings.ContainsAny(k, " \t\r\n") || strings.ContainsAny(v, "\r\n") {
+		return "", "", fmt.Errorf("--header wants \"Name: value\", got %q", spec)
+	}
+	switch strings.ToLower(k) {
+	case "host", "content-length", "transfer-encoding", "connection":
+		return "", "", fmt.Errorf("--header cannot set %s (use --host-header for Host)", k)
+	}
+	return k, v, nil
+}
+
+// ParseRewrite reads "/from=/to"; both are path prefixes.
+func ParseRewrite(spec string) (PathRewrite, error) {
+	from, to, ok := strings.Cut(spec, "=")
+	if !ok || !strings.HasPrefix(from, "/") || !strings.HasPrefix(to, "/") {
+		return PathRewrite{}, fmt.Errorf("--rewrite wants /from=/to, got %q", spec)
+	}
+	return PathRewrite{From: strings.TrimSuffix(from, "/"), To: strings.TrimSuffix(to, "/")}, nil
+}
+
+// ParseBlock reads "/path" or "/path/*".
+func ParseBlock(spec string) (string, error) {
+	if !strings.HasPrefix(spec, "/") {
+		return "", fmt.Errorf("--block wants a path such as /admin or /admin/*, got %q", spec)
+	}
+	return spec, nil
+}
+
+// blockPath normalises a path the way lenient app servers do, so a block
+// cannot be stepped around with /Admin, /admin\x or /admin;x.
+func blockPath(p string) string {
+	p = strings.ReplaceAll(p, "\\", "/")
+	var segs []string
+	for _, s := range strings.Split(p, "/") {
+		if i := strings.IndexByte(s, ';'); i >= 0 {
+			s = s[:i]
+		}
+		segs = append(segs, s)
+	}
+	return strings.ToLower(path.Clean("/" + strings.Join(segs, "/")))
+}
+
+func (ru *Rules) blocked(p string) bool {
+	p = blockPath(p)
+	for _, b := range ru.Blocks {
+		if strings.HasSuffix(b, "*") {
+			pre := blockPath(strings.TrimSuffix(b, "*"))
+			if pre != "/" {
+				pre += "/"
+			}
+			if strings.HasPrefix(p+"/", pre) {
+				return true
+			}
+		} else if p == blockPath(b) {
+			return true
+		}
+	}
+	return false
+}
+
+func (ru *Rules) apply(r *http.Request) {
+	for k, vs := range ru.Headers {
+		r.Header.Del(k)
+		for _, v := range vs {
+			r.Header.Add(k, v)
+		}
+	}
+	for _, rw := range ru.Rewrites {
+		if r.URL.Path == rw.From || strings.HasPrefix(r.URL.Path, rw.From+"/") || rw.From == "" {
+			rest := strings.TrimPrefix(r.URL.Path, rw.From)
+			r.URL.Path = rw.To + rest
+			if r.URL.Path == "" {
+				r.URL.Path = "/"
+			}
+			r.URL.RawPath = ""
+			return
+		}
+	}
+}

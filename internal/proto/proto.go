@@ -44,6 +44,9 @@ type TunnelReq struct {
 	// Password makes the server ask visitors for HTTP Basic auth (any user
 	// name) before anything reaches the local app. HTTP tunnels only.
 	Password string `json:"password,omitempty"`
+	// Users are "name:password" pairs; any of them opens the link, and the
+	// app learns which one in X-Forwarded-User. HTTP tunnels only.
+	Users []string `json:"users,omitempty"`
 	// MaxAge asks for a shorter link lifetime than the server's default, in seconds.
 	MaxAge int64 `json:"max_age,omitempty"`
 	// MaxVisitors closes the link to anyone after the first N visitor networks.
@@ -90,6 +93,7 @@ type Event struct {
 	Millis int64  `json:"ms"`
 	Bytes  int64  `json:"bytes"`
 	Remote string `json:"remote,omitempty"`
+	User   string `json:"user,omitempty"` // named visitor, when the link uses user:password pairs
 }
 
 type StreamHeader struct {

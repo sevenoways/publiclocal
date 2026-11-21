@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"errors"
@@ -214,7 +215,7 @@ func (rt *route) record(r *http.Request, status int, n int64, d time.Duration) {
 		path = path[:200] + "…"
 	}
 	remote, _, _ := net.SplitHostPort(r.RemoteAddr)
-	rt.sess.emit(proto.Event{Tunnel: rt.idx, Method: r.Method, Path: path, Status: status, Millis: d.Milliseconds(), Bytes: n, Remote: remote})
+	rt.sess.emit(proto.Event{Tunnel: rt.idx, Method: r.Method, Path: path, Status: status, Millis: d.Milliseconds(), Bytes: n, Remote: remote, User: r.Header.Get("X-Forwarded-User")})
 }
 
 // countingWriter captures the status and size of a proxied response. It
@@ -576,14 +577,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if o.password != "" {
-		_, pw, ok := r.BasicAuth()
-		if !ok || subtle.ConstantTimeCompare([]byte(pw), []byte(o.password)) != 1 {
+	r.Header.Del("X-Forwarded-User") // only the gate below may say who a visitor is
+	if o.password != "" || len(o.users) > 0 {
+		user, pw, ok := r.BasicAuth()
+		name, want := "", o.password
+		if u, found := o.users[strings.ToLower(user)]; found {
+			name, want = strings.ToLower(user), u
+		}
+		if want == "" {
+			want = "\x00no-such-user" // compare anyway, so timing does not reveal valid names
+		}
+		got, exp := sha256.Sum256([]byte(pw)), sha256.Sum256([]byte(want))
+		if !ok || subtle.ConstantTimeCompare(got[:], exp[:]) != 1 {
 			w.Header().Set("WWW-Authenticate", `Basic realm="PublicLocal link", charset="UTF-8"`)
 			http.Error(w, "publiclocal: this link needs a password", http.StatusUnauthorized)
 			return
 		}
 		r.Header.Del("Authorization") // the app never sees the link password
+		if name != "" {
+			r.Header.Set("X-Forwarded-User", name)
+		}
 	}
 	if o.maxVisit > 0 && !s.admitVisitor(sub, ipKey(r.RemoteAddr), o.maxVisit) {
 		s.statusPage(w, r, statusPage{

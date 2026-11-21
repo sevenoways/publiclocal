@@ -25,6 +25,7 @@ import (
 // exists (their options arrive with the shell command, after -R).
 type linkOpts struct {
 	password    string
+	users       map[string]string // lowercase name -> password
 	note        string
 	maxVisit    int
 	hostHeader  string
@@ -37,6 +38,7 @@ type linkOpts struct {
 var (
 	githubNameRE = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,38})$`)
 	hostHeaderRE = regexp.MustCompile(`^[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?$`)
+	userNameRE   = regexp.MustCompile(`^[a-z0-9][a-z0-9._@-]{0,63}$`)
 )
 
 const maxListEntries = 50
@@ -49,6 +51,20 @@ func (s *Server) parseLinkOpts(t proto.TunnelReq) (*linkOpts, error) {
 	}
 	if o.maxVisit < 0 {
 		return nil, errors.New("max-visits must be positive")
+	}
+	if len(t.Users) > maxListEntries {
+		return nil, fmt.Errorf("at most %d users", maxListEntries)
+	}
+	for _, u := range t.Users {
+		name, pw, ok := strings.Cut(strings.TrimSpace(u), ":")
+		name = strings.ToLower(name)
+		if !ok || !userNameRE.MatchString(name) || pw == "" || len(pw) > 200 {
+			return nil, fmt.Errorf("users look like name:password; got %q", u)
+		}
+		if o.users == nil {
+			o.users = map[string]string{}
+		}
+		o.users[name] = pw
 	}
 	if h := t.HostHeader; h != "" {
 		if !hostHeaderRE.MatchString(h) {
@@ -128,6 +144,8 @@ func sshOptions(words []string) (proto.TunnelReq, time.Duration, error) {
 		switch strings.ToLower(k) {
 		case "password":
 			t.Password = v
+		case "users":
+			t.Users = strings.Split(v, ",")
 		case "note":
 			t.Note = v
 		case "max-visits", "visits":
@@ -149,7 +167,7 @@ func sshOptions(words []string) (proto.TunnelReq, time.Duration, error) {
 		case "allow-github":
 			t.AllowGitHub = strings.Split(v, ",")
 		default:
-			return t, 0, fmt.Errorf("unknown option %q (try password, expires, max-visits, note, host-header, allow-ip, allow-github)", k)
+			return t, 0, fmt.Errorf("unknown option %q (try password, users, expires, max-visits, note, host-header, allow-ip, allow-github)", k)
 		}
 	}
 	return t, expires, nil

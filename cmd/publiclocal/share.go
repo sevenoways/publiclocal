@@ -21,6 +21,10 @@ func runShare(ctx context.Context, args []string) error {
 		fmt.Fprintln(fs.Output(), "Usage: publiclocal share [flags] <file or folder>")
 		fs.PrintDefaults()
 	}
+	args, err := applyProfile(args)
+	if err != nil {
+		return err
+	}
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		fs.Usage()

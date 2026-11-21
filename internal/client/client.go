@@ -20,11 +20,12 @@ import (
 )
 
 type Tunnel struct {
-	Type       string // proto.TypeHTTP or proto.TypeTCP
-	Local      string // local address to forward to, e.g. "127.0.0.1:3000"
-	Subdomain  string // HTTP only; empty for a random one
-	RemotePort int    // TCP only; 0 for a random one
-	Password   string // HTTP only; visitors must give it as HTTP Basic auth
+	Type       string   // proto.TypeHTTP or proto.TypeTCP
+	Local      string   // local address to forward to, e.g. "127.0.0.1:3000"
+	Subdomain  string   // HTTP only; empty for a random one
+	RemotePort int      // TCP only; 0 for a random one
+	Password   string   // HTTP only; visitors must give it as HTTP Basic auth
+	Users      []string // HTTP only; "name:password" pairs, any of which opens the link
 
 	MaxAge      time.Duration // HTTP only; ask for a shorter link lifetime than the server default
 	MaxVisitors int           // HTTP only; only the first N visitor networks may use the link
@@ -70,6 +71,8 @@ type Config struct {
 	// Feedback adds a comment button to the app's HTML pages; comments go to OnFeedback.
 	Feedback   bool
 	OnFeedback func(Feedback)
+	// Rules are the owner's edge rules: added headers, path rewrites and blocked paths.
+	Rules Rules
 	// LiveKey, if set, opens a read-only live request viewer at
 	// /.publiclocal/live?k=LiveKey on each HTTP link.
 	LiveKey string
@@ -142,7 +145,7 @@ func runOnce(ctx context.Context, cfg Config) (connected bool, err error) {
 		hello.Tunnels = append(hello.Tunnels, proto.TunnelReq{
 			Type: t.Type, Subdomain: t.Subdomain, RemotePort: t.RemotePort, Claim: t.Claim, Password: t.Password,
 			MaxAge: int64(t.MaxAge / time.Second), MaxVisitors: t.MaxVisitors, Note: t.Note,
-			HostHeader: t.HostHeader, AllowIPs: t.AllowIPs, AllowGitHub: t.AllowGitHub, Domain: t.Domain,
+			HostHeader: t.HostHeader, AllowIPs: t.AllowIPs, AllowGitHub: t.AllowGitHub, Domain: t.Domain, Users: t.Users,
 		})
 	}
 	ctrl.SetDeadline(time.Now().Add(15 * time.Second))

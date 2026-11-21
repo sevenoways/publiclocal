@@ -33,6 +33,10 @@ Share a dev server, test webhooks (Stripe, GitHub, Slack), demo to a client, rea
 - **GitHub sign-in to view** (`--allow-github anna,@my-org`): only the people or organisation members you name get in
 - **Webhook inbox**: `publiclocal catch` records every request with nothing running locally; `publiclocal replay --to 3000` sends them to your app later
 - **`--host-header localhost`** for Vite, Django, Rails and other dev servers that reject unknown hosts; `--allow-ip` to limit visitors by address
+- **Named users**: `--password anna:pw1,bob:pw2` shows who viewed what; your app gets `X-Forwarded-User`
+- **Edge rules**: `--header "X-Env: staging"`, `--rewrite /api=/v2/api`, `--block /admin/*`
+- **Profiles**: `--profile demo` takes flags from a `publiclocal.json` your team can commit
+- **Request diff** in the inspector: compare two requests line by line
 - **Your own domain, free**: `publiclocal domains add demo.yourco.com`, two DNS records, then `--domain demo.yourco.com`; certificates are automatic
 - **VS Code extension** with a Share button, and a **GitHub Action** (`uses: sevenoways/publiclocal/action@v1`) for webhook tests and PR preview links in CI
 - **Webhook signature checks**: `--verify stripe:whsec_...` (also `github`, `slack`, `shopify`) marks every webhook ✓ or ✗; `--verify-strict` refuses bad ones
@@ -117,6 +121,9 @@ publiclocal catch                         # webhook inbox; later: publiclocal re
 publiclocal http --verify stripe:whsec_... 3000  # check webhook signatures
 publiclocal http --mock /api/users=users.json 3000  # answer a path from a file
 publiclocal http --feedback --live 3000    # comments from visitors, live view for teammates
+publiclocal http --password anna:pw1,bob:pw2 3000   # named users
+publiclocal http --header "X-Env: staging" --block "/admin/*" 3000
+publiclocal http --profile demo            # flags from publiclocal.json
 publiclocal domains add demo.example.com   # then: publiclocal http --domain demo.example.com 3000
 publiclocal tcp 22                         # tcp://tunnel.example.com:1xxxx
 publiclocal tcp --remote-port 15432 5432   # fixed public port

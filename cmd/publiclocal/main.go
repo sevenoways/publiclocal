@@ -34,6 +34,7 @@ Usage:
   publiclocal links                                         your links and when they expire
   publiclocal extend  <link>                                give a link another 7 days
   publiclocal domains add|verify|list|remove [host]         use your own domain name for links
+  publiclocal profiles                                      saved flag sets from publiclocal.json (--profile NAME)
   publiclocal logout
   publiclocal mcp     [flags]                               MCP server for AI assistants (Claude, Cursor, Codex...)
   publiclocal server  --domain tunnel.example.com [flags]   run your own server
@@ -80,6 +81,8 @@ func main() {
 		err = runExtend(os.Args[2:])
 	case "domains":
 		err = runDomains(os.Args[2:])
+	case "profiles":
+		err = runProfiles(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("publiclocal", version)
 	case "help", "-h", "--help":

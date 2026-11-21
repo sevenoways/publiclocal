@@ -32,6 +32,7 @@ type Captured struct {
 	Status   int
 	Duration time.Duration
 	Remote   string // visitor address, from the server's X-Forwarded-For
+	User     string // named visitor, when the link uses user:password pairs
 	Bytes    int64  // response body bytes
 	Verified string // --verify result: "valid" or why it failed
 	Mocked   bool   // answered by --mock, not the app
@@ -97,6 +98,9 @@ func newHTTPTunnel(idx int, t Tunnel, cfg Config) *httpTunnel {
 					pr.Out.Header.Set(h, v)
 				}
 			}
+			if len(t.Users) == 0 {
+				pr.Out.Header.Del("X-Forwarded-User") // only a server enforcing named users may set it
+			}
 			if cfg.Feedback && pr.In.Method == http.MethodGet && strings.Contains(pr.In.Header.Get("Accept"), "text/html") {
 				pr.Out.Header.Del("Accept-Encoding") // the widget goes into plain HTML
 			}
@@ -118,7 +122,7 @@ func newHTTPTunnel(idx int, t Tunnel, cfg Config) *httpTunnel {
 			return nil
 		}
 	}
-	h := &tunnelHandler{idx: idx, local: t.Local, proxy: proxy, cfg: cfg, live: &liveHub{}, feedback: &feedbackLimiter{}}
+	h := &tunnelHandler{idx: idx, local: t.Local, proxy: proxy, cfg: cfg, live: &liveHub{}, feedback: &feedbackLimiter{}, named: len(t.Users) > 0}
 	ht := &httpTunnel{ln: newStreamListener()}
 	ht.srv = &http.Server{Handler: h, ReadHeaderTimeout: 60 * time.Second}
 	go ht.srv.Serve(ht.ln)
@@ -140,6 +144,7 @@ type tunnelHandler struct {
 
 	live     *liveHub
 	feedback *feedbackLimiter
+	named    bool // the link uses user:password pairs, so X-Forwarded-User is the server's word
 }
 
 func (h *tunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +172,9 @@ func (h *tunnelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	start := time.Now()
 	c := Captured{Time: start, Tunnel: h.idx, Local: h.local, Method: r.Method, Path: r.URL.RequestURI(), Host: r.Host, Remote: remote}
+	if h.named {
+		c.User = r.Header.Get("X-Forwarded-User")
+	}
 	limit := h.cfg.CaptureBody
 	if limit > 0 {
 		c.ReqHeader = r.Header.Clone()
@@ -223,6 +231,12 @@ func (h *tunnelHandler) serve(w http.ResponseWriter, r *http.Request, c *Capture
 		http.Error(w, "publiclocal: simulated failure (--fail)", http.StatusServiceUnavailable)
 		return
 	}
+	if h.cfg.Rules.blocked(r.URL.Path) {
+		c.Note = strings.TrimSpace(c.Note + " blocked")
+		http.Error(w, "publiclocal: this path is not available on this link", http.StatusForbidden)
+		return
+	}
+	h.cfg.Rules.apply(r)
 	for _, m := range h.cfg.Mocks {
 		if m.matches(r) {
 			c.Mocked = true

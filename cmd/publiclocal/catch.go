@@ -32,6 +32,10 @@ func runCatch(ctx context.Context, args []string) error {
 		fmt.Fprintln(fs.Output(), "Answers every request with --status/--body and records it; replay later with `publiclocal replay --to <port>`.")
 		fs.PrintDefaults()
 	}
+	args, err := applyProfile(args)
+	if err != nil {
+		return err
+	}
 	fs.Parse(args)
 	if fs.NArg() != 0 {
 		fs.Usage()

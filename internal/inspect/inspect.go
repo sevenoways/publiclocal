@@ -504,9 +504,12 @@ var page = template.Must(template.New("inspect").Parse(`<!doctype html>
   h3 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:18px 0 6px }
   pre { background:var(--code); color:var(--codefg); border-radius:10px; padding:12px 14px; overflow:auto; font-size:12.5px; margin:0; max-height:40vh; white-space:pre-wrap; word-break:break-all }
   .back { display:none } @media (max-width:900px) { .back { display:inline-block; margin-bottom:10px } }
+  .cmpbar { background:var(--accent); color:#fff; padding:6px 14px; font-size:13px; display:none } .cmpbar.on { display:block } .cmpbar button { margin-left:10px; padding:3px 10px; background:#fff; color:var(--accent); border-color:#fff }
+  pre.diff .add { background:rgba(21,122,60,.35) } pre.diff .del { background:rgba(180,35,24,.35); text-decoration:line-through } pre.diff .same { opacity:.75 }
 </style></head>
 <body>
 <header><b>PublicLocal inspector</b><span class="links">{{range .Links}}{{.}} {{end}}</span><input id="q" placeholder="filter path or method"><a class="har" href="/api/har?token={{.Token}}" download>Download HAR</a></header>
+<div class="cmpbar" id="cmpbar">Comparing with <b id="cmpname"></b>: pick the other request in the list. <button id="cmpoff">Cancel</button></div>
 <main id="main">
   <div id="list"><div class="empty">Waiting for requests… send one to your link and it appears here.</div></div>
   <div id="detail"><div class="empty">Select a request to see headers and bodies, and to replay it.</div></div>
@@ -515,7 +518,7 @@ var page = template.Must(template.New("inspect").Parse(`<!doctype html>
 var TOKEN={{.Token}};
 (function(){
   var list=document.getElementById('list'), detail=document.getElementById('detail'), q=document.getElementById('q'), main=document.getElementById('main');
-  var items=[], sel=null;
+  var items=[], sel=null, cmpBase=null, cmpbar=document.getElementById('cmpbar');
   function cls(s){return s>=200&&s<400?'ok':(s>=400?'bad':'')}
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
   function hdrs(h){var o=[];Object.keys(h||{}).sort().forEach(function(k){(h[k]||[]).forEach(function(v){o.push(k+': '+v)})});return o.join('\n')}
@@ -527,15 +530,45 @@ var TOKEN={{.Token}};
   function show(e){
     sel=e.id; main.classList.add('open'); render();
     detail.innerHTML='<button class="quiet back" id="back">← Back</button><h2>'+esc(e.method)+' '+esc(e.path)+'</h2><div class="meta">'+esc(e.host)+' · <span class="'+cls(e.status)+'">'+e.status+'</span> · '+e.ms+' ms · '+e.bytes+' B · from '+esc(e.remote)+' · '+new Date(e.time).toLocaleTimeString()+(e.replay_of?' · replay of #'+e.replay_of:'')+'</div>'
-      +'<button id="replay"'+(e.req_binary?' disabled':'')+'>Replay against localhost</button><input class="to" id="to" value="'+esc(e.local)+'" title="where to send it: a local port or host:port">'
+      +'<button id="replay"'+(e.req_binary?' disabled':'')+'>Replay against localhost</button><input class="to" id="to" value="'+esc(e.local)+'" title="where to send it: a local port or host:port"> <button class="quiet" id="cmp" title="see what changed between this request and another">Compare with…</button>'
       +'<h3>Request headers</h3><pre>'+esc(hdrs(e.req_header))+'</pre>'
       +(e.req_body?'<h3>Request body'+(e.req_truncated?' (truncated)':'')+'</h3><pre>'+esc(e.req_body)+'</pre>':'')
       +'<h3>Response headers</h3><pre>'+esc(hdrs(e.resp_header))+'</pre>'
       +(e.resp_body?'<h3>Response body'+(e.resp_truncated?' (truncated)':'')+'</h3><pre>'+esc(e.resp_body)+'</pre>':'');
     document.getElementById('replay').onclick=function(){var t=document.getElementById('to').value.trim(); if(/^[0-9]+$/.test(t)) t='127.0.0.1:'+t; fetch('/api/replay/'+e.id+'?to='+encodeURIComponent(t),{method:'POST',headers:{'X-Inspector-Token':TOKEN}}).then(function(r){return r.ok?r.json():r.text().then(function(t){throw new Error(t)})}).then(function(n){load().then(function(){var m=items.filter(function(x){return x.id===n.id})[0];if(m)show(m)})}).catch(function(err){alert(err.message)})};
     var b=document.getElementById('back'); if(b) b.onclick=function(){main.classList.remove('open')};
+    document.getElementById('cmp').onclick=function(){cmpBase=e; document.getElementById('cmpname').textContent='#'+e.id+' '+e.method+' '+e.path; cmpbar.classList.add('on'); main.classList.remove('open')};
   }
-  list.addEventListener('click',function(ev){var r=ev.target.closest('.row');if(!r)return;var e=items.filter(function(x){return x.id==r.dataset.id})[0];if(e)show(e)});
+  document.getElementById('cmpoff').onclick=function(){cmpBase=null; cmpbar.classList.remove('on')};
+  // Line diff (longest common subsequence), enough for headers and small bodies.
+  function diffLines(a,b){
+    a=a.split('\n'); b=b.split('\n'); var n=a.length, m=b.length, cap=400;
+    if(n>cap||m>cap){a=a.slice(0,cap);b=b.slice(0,cap);n=a.length;m=b.length}
+    var L=[]; for(var i=0;i<=n;i++){L.push(new Int16Array(m+1))}
+    for(i=n-1;i>=0;i--)for(var j=m-1;j>=0;j--)L[i][j]=a[i]===b[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
+    var out=[]; i=0; j=0;
+    while(i<n&&j<m){if(a[i]===b[j]){out.push(['same',a[i]]);i++;j++}else if(L[i+1][j]>=L[i][j+1]){out.push(['del',a[i]]);i++}else{out.push(['add',b[j]]);j++}}
+    while(i<n)out.push(['del',a[i++]]); while(j<m)out.push(['add',b[j++]]);
+    return out;
+  }
+  function diffHTML(a,b){
+    var d=diffLines(a||'',b||''), changed=d.some(function(x){return x[0]!=='same'});
+    if(!changed) return '<pre class="diff"><span class="same">'+esc(a||'(empty)')+'</span></pre><div class="meta">identical</div>';
+    return '<pre class="diff">'+d.map(function(x){return '<span class="'+x[0]+'">'+(x[0]==='add'?'+ ':x[0]==='del'?'- ':'  ')+esc(x[1])+'</span>'}).join('\n')+'</pre>';
+  }
+  function showDiff(a,b){
+    sel=b.id; main.classList.add('open'); render(); cmpbar.classList.remove('on'); cmpBase=null;
+    detail.innerHTML='<button class="quiet back" id="back">← Back</button><h2>#'+a.id+' '+esc(a.method)+' '+esc(a.path)+' <span class="meta">vs</span> #'+b.id+' '+esc(b.method)+' '+esc(b.path)+'</h2>'
+      +'<div class="meta"><span class="'+cls(a.status)+'">'+a.status+'</span> '+a.ms+' ms · '+new Date(a.time).toLocaleTimeString()+' &nbsp;→&nbsp; <span class="'+cls(b.status)+'">'+b.status+'</span> '+b.ms+' ms · '+new Date(b.time).toLocaleTimeString()+'. Red lines are only in the first, green only in the second.</div>'
+      +'<button class="quiet" id="showone">Show #'+b.id+' alone</button>'
+      +'<h3>Request headers</h3>'+diffHTML(hdrs(a.req_header),hdrs(b.req_header))
+      +'<h3>Request body</h3>'+diffHTML(a.req_body,b.req_body)
+      +'<h3>Response headers</h3>'+diffHTML(hdrs(a.resp_header),hdrs(b.resp_header))
+      +'<h3>Response body</h3>'+diffHTML(a.resp_body,b.resp_body);
+    var bk=document.getElementById('back'); if(bk) bk.onclick=function(){main.classList.remove('open')};
+    document.getElementById('showone').onclick=function(){show(b)};
+  }
+  list.addEventListener('click',function(ev){var r=ev.target.closest('.row');if(!r)return;var e=items.filter(function(x){return x.id==r.dataset.id})[0];if(!e)return; if(cmpBase&&cmpBase.id!==e.id){showDiff(cmpBase,e)}else{show(e)}});
   q.addEventListener('input',render);
   function load(){return fetch('/api/requests',{headers:{'X-Inspector-Token':TOKEN}}).then(function(r){return r.json()}).then(function(d){items=d;render()}).catch(function(){})}
   load(); setInterval(load,1000);

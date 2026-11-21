@@ -30,9 +30,9 @@
 
 <main class="wrap prose">
   <h1>Documentation</h1>
-  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 2 November 2026 · v1.4</span></p>
+  <p class="lead">Everything you need to share localhost with PublicLocal, from the first command to running your own server. <span class="updated">Updated 21 November 2026 · v1.5</span></p>
   <nav class="toc" aria-label="On this page">
-    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#gate">GitHub sign-in</a><a href="#catch">Webhook inbox</a><a href="#verify">Signature checks</a><a href="#mock">Mocks &amp; bad networks</a><a href="#feedback">Feedback &amp; live view</a><a href="#domains">Your own domain</a><a href="#vscode">VS Code</a><a href="#action">GitHub Action</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
+    <a href="#ssh">No install (SSH)</a><a href="#install">Install</a><a href="#quick-start">Quick start</a><a href="#requests">Inspector</a><a href="#links">Link options</a><a href="#gate">GitHub sign-in</a><a href="#catch">Webhook inbox</a><a href="#verify">Signature checks</a><a href="#mock">Mocks &amp; bad networks</a><a href="#feedback">Feedback &amp; live view</a><a href="#rules">Users, rules &amp; profiles</a><a href="#domains">Your own domain</a><a href="#vscode">VS Code</a><a href="#action">GitHub Action</a><a href="#share">Share files</a><a href="#login">Sign in</a><a href="#commands">Commands</a><a href="#self-host">Self-host</a><a href="#mcp">MCP</a><a href="#limits">Free server limits</a><a href="#troubleshooting">Troubleshooting</a>
   </nav>
 
   <h2 id="install">Install</h2>
@@ -72,7 +72,7 @@ go install github.com/sevenoways/publiclocal/cmd/publiclocal@latest</pre>
     <li>Change <code>3000</code> to your app's port. Several <code>-R</code> options give several links.</li>
     <li>Port 443 gets through almost any firewall. The first time, SSH asks you to confirm the server's key; check it matches the fingerprint below.</li>
     <li>Add <code>-o ServerAliveInterval=30</code> on flaky networks, and <code>-T</code> if you don't want a terminal.</li>
-    <li>Options go after the host name: <code>ssh -p 443 -R0:localhost:3000 publiclocal.app password=s3cret expires=30m max-visits=1 host-header=localhost allow-ip=203.0.113.0/24 allow-github=anna,@acme note="for Anna"</code>. With <code>-N</code>, put them in the user name instead, joined by <code>+</code>: <code>"password=s3cret+expires=30m"@publiclocal.app</code>.</li>
+    <li>Options go after the host name: <code>ssh -p 443 -R0:localhost:3000 publiclocal.app password=s3cret expires=30m max-visits=1 host-header=localhost allow-ip=203.0.113.0/24 allow-github=anna,@acme users=anna:pw1,bob:pw2 note="for Anna"</code>. With <code>-N</code>, put them in the user name instead, joined by <code>+</code>: <code>"password=s3cret+expires=30m"@publiclocal.app</code>.</li>
     <li>SSH links are anonymous and end when you disconnect. For passwords, <code>--max-visits</code>, the inspector, file sharing and links that survive restarts, install the client.</li>
   </ul>
   <p>Server key fingerprint: <code id="ssh-fp">SHA256:vqk+u4I5WNZckst73cTJ0JtEM+0Gh54A49ZjoZpbEWQ</code> (ED25519)</p>
@@ -94,6 +94,7 @@ Served 2 requests from 2 visitors · 4 KB · top: /webhooks/stripe (1), /api/ord
 
   <h2 id="links">Passwords, notes, self-destructing links, QR codes</h2>
 <pre class="block"><span class="dim">$</span> publiclocal http --password s3cret 3000     <span class="dim"># visitors must enter the password (any user name)</span>
+<span class="dim">$</span> publiclocal http --password anna:pw1,bob:pw2 3000   <span class="dim"># named users; your app gets X-Forwarded-User</span>
 <span class="dim">$</span> publiclocal http --max-visits 1 3000         <span class="dim"># only the first person who opens it can use it</span>
 <span class="dim">$</span> publiclocal http --expires 30m 3000          <span class="dim"># gone after half an hour</span>
 <span class="dim">$</span> publiclocal http --note "Staging build for Anna" 3000
@@ -138,6 +139,19 @@ Live view:  https://k7xq2m.publiclocal.app/.publiclocal/live?k=9f2c... (share wi
    The second plan's button is cut off on my phone.</pre>
   <p><code>--feedback</code> adds a small Feedback button to your app's pages. Visitors write a comment and it appears in your terminal (pages are left untouched when they stream or are over 5 MB), with the page they were on. Nothing is stored anywhere else. <code>--live</code> prints a private link where teammates watch requests arrive as they happen. It shows only method, path, status and time, never headers, bodies or query strings, so avoid it if your paths contain secrets such as reset tokens. Both follow the link's password, IP and GitHub rules.</p>
 
+  <h2 id="rules">Named users, edge rules and profiles</h2>
+<pre class="block"><span class="dim">$</span> publiclocal http --password anna:pw1,bob:pw2 3000
+12:01:04  GET    /pricing   200   12 ms  anna@203.0.113.7
+
+<span class="dim">$</span> publiclocal http --header "X-Env: staging" --rewrite /api=/v2/api --block "/admin/*" 3000
+
+<span class="dim">$</span> cat publiclocal.json
+{"profiles": {"demo": {"flags": ["--password", "s3cret", "--expires", "2h", "--note", "staging build"], "args": ["3000"]}}}
+<span class="dim">$</span> publiclocal http --profile demo</pre>
+  <p><strong>Named users.</strong> Give <code>--password</code> comma-separated <code>name:password</code> pairs and each visitor signs in as themselves. The feed and inspector show who made each request, and your app receives the name in <code>X-Forwarded-User</code> (visitors cannot set that header themselves). The server checks the password; your app never sees it.</p>
+  <p><strong>Edge rules.</strong> <code>--header "Name: value"</code> adds a header to every request, <code>--rewrite /from=/to</code> changes a path prefix before it reaches your app, and <code>--block /path</code> (or <code>/path/*</code>) answers with 403. All three are applied on your computer, after the server's gates; blocks look at the public path before any rewrite, ignore case, and treat <code>\</code> and <code>;</code> the way lenient servers do. Repeat a flag for more rules.</p>
+  <p><strong>Profiles.</strong> Put flag sets in <code>publiclocal.json</code> in your project (commit it for the team) or in <code>profiles.json</code> in the PublicLocal config folder, then <code>--profile NAME</code> stands for all of them. Flags you type after it win, and a port on the command line replaces the profile's. <code>publiclocal profiles</code> lists them with passwords hidden. A project's <code>publiclocal.json</code> may only set link options (password, expiry, notes, rules and the like) and local ports, never <code>--server</code>, <code>--token</code>, <code>--mock</code> or file paths, so a cloned repository cannot redirect your tunnel or publish your files; those go in your own <code>profiles.json</code>. The resolved flags are printed, with secrets hidden, each time a profile is used.</p>
+
   <h2 id="domains">Links on your own domain</h2>
 <pre class="block"><span class="dim">$</span> publiclocal domains add demo.example.com
 Add these two DNS records for demo.example.com:
@@ -164,7 +178,7 @@ Also at     https://demo.example.com</pre>
   <p>Expose a port from a job: run webhook tests against a real HTTPS URL, or post a preview link on each pull request. The link is in the <code>url</code> output and in <code>$PUBLICLOCAL_URL</code>, and the tunnel stops when the job ends. Inputs: <code>port</code>, <code>password</code>, <code>expires</code>, <code>args</code> (any client flags, e.g. <code>--allow-github @my-org</code>), <code>account</code> (your login token, for 7-day links and custom domains), and <code>server</code>/<code>token</code> for your own server. <a href="https://github.com/sevenoways/publiclocal/tree/main/action">Full README</a>.</p>
 
   <h2 id="devservers">Dev servers that reject the tunnel's address</h2>
-  <p>Vite, webpack, Django (<code>ALLOWED_HOSTS</code>), Rails (<code>config.hosts</code>) and others refuse requests whose Host isn't one they expect. <code>--host-header localhost</code> (or <code>localhost:5173</code>) sends them the name they want; the public name stays in <code>X-Forwarded-Host</code>. <code>--open</code> opens the link in your browser and <code>--copy</code> puts it on the clipboard as soon as it is ready. The inspector's <em>Download HAR</em> button saves every captured request for a bug report or your browser's developer tools.</p>
+  <p>Vite, webpack, Django (<code>ALLOWED_HOSTS</code>), Rails (<code>config.hosts</code>) and others refuse requests whose Host isn't one they expect. <code>--host-header localhost</code> (or <code>localhost:5173</code>) sends them the name they want; the public name stays in <code>X-Forwarded-Host</code>. <code>--open</code> opens the link in your browser and <code>--copy</code> puts it on the clipboard as soon as it is ready. The inspector's <em>Download HAR</em> button saves every captured request for a bug report or your browser's developer tools, and <em>Compare with…</em> shows what changed between two requests, line by line: the quickest answer to "why did this webhook fail when the last one worked?"</p>
 
   <h2 id="share">Share a folder or a file</h2>
 <pre class="block"><span class="dim">$</span> publiclocal share ./build          <span class="dim"># a folder, with a listing</span>
@@ -186,7 +200,7 @@ Also at     https://demo.example.com</pre>
   <div class="table-wrap"><table>
     <thead><tr><th>Command</th><th>What it does</th></tr></thead>
     <tbody>
-    <tr><td><code>publiclocal http &lt;port&gt; [port...]</code></td><td>Public HTTPS links for local HTTP servers. Flags: <code>--password</code>, <code>--allow-github</code>, <code>--allow-ip</code>, <code>--domain</code>, <code>--host-header</code>, <code>--verify</code>, <code>--mock</code>, <code>--latency</code>, <code>--fail</code>, <code>--feedback</code>, <code>--live</code>, <code>--open</code>, <code>--copy</code>, <code>--max-visits</code>, <code>--expires</code>, <code>--note</code>, <code>--cors</code>, <code>--qr</code>, <code>--inspect</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
+    <tr><td><code>publiclocal http &lt;port&gt; [port...]</code></td><td>Public HTTPS links for local HTTP servers. Flags: <code>--password</code>, <code>--allow-github</code>, <code>--allow-ip</code>, <code>--domain</code>, <code>--host-header</code>, <code>--header</code>, <code>--rewrite</code>, <code>--block</code>, <code>--profile</code>, <code>--verify</code>, <code>--mock</code>, <code>--latency</code>, <code>--fail</code>, <code>--feedback</code>, <code>--live</code>, <code>--open</code>, <code>--copy</code>, <code>--max-visits</code>, <code>--expires</code>, <code>--note</code>, <code>--cors</code>, <code>--qr</code>, <code>--inspect</code>, <code>--quiet</code>, <code>--new</code>, <code>--link NAME</code>, <code>--subdomain NAME</code> (own server), <code>--server HOST</code>, <code>--token</code>.</td></tr>
     <tr><td><code>publiclocal share &lt;path&gt;</code></td><td>Serve a folder or file from this computer and share it. Same flags as <code>http</code>.</td></tr>
     <tr><td><code>publiclocal catch</code></td><td>A link that answers and records every request (webhook inbox). <code>--status</code>, <code>--body</code>, plus the link flags.</td></tr>
     <tr><td><code>publiclocal replay --to &lt;port&gt;</code></td><td>Send caught requests to your app. <code>--list</code>, <code>--id</code>, <code>--last</code>, <code>--file</code>.</td></tr>
@@ -194,6 +208,7 @@ Also at     https://demo.example.com</pre>
     <tr><td><code>publiclocal login</code> / <code>logout</code></td><td>Sign in with GitHub for 7-day links; sign out and revoke the token.</td></tr>
     <tr><td><code>publiclocal links</code></td><td>List your links, whether they are online, and when they expire.</td></tr>
     <tr><td><code>publiclocal extend &lt;link&gt;</code></td><td>Push a link's expiry to 7 days from now (signed in).</td></tr>
+    <tr><td><code>publiclocal profiles</code></td><td>List saved flag sets from <code>publiclocal.json</code>; use one with <code>--profile NAME</code>.</td></tr>
     <tr><td><code>publiclocal domains add|verify|list|remove</code></td><td>Use your own domain name for links (signed in). See <a href="#domains">your own domain</a>.</td></tr>
     <tr><td><code>publiclocal mcp</code></td><td>Run the MCP server for AI assistants. Flags: <code>--allow-ports 3000,5173</code>, <code>--max-tunnels</code>.</td></tr>
     <tr><td><code>publiclocal server</code></td><td>Run your own tunnel server. See <a href="#self-host">self-hosting</a>.</td></tr>

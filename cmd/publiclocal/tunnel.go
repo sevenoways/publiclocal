@@ -39,6 +39,9 @@ type tunnelOpts struct {
 	feedback, live          *bool
 	mocks                   *listFlag
 	domain                  *string
+	headers, rewrites       *listFlag
+	blocks                  *listFlag
+	profile                 *string
 	remotePort, maxVisits   *int
 	expires                 *time.Duration
 	debug                   *bool
@@ -69,7 +72,8 @@ func tunnelFlags(kind string) (*flag.FlagSet, *tunnelOpts) {
 	}
 	o.sub = fs.String("subdomain", "", "requested subdomain (own server)")
 	o.link = fs.String("link", "", "take back one of your links by name, e.g. k7xq2m (signed in)")
-	o.password = fs.String("password", os.Getenv("PUBLICLOCAL_PASSWORD"), "visitors must enter this password, any user name (env PUBLICLOCAL_PASSWORD)")
+	o.password = fs.String("password", os.Getenv("PUBLICLOCAL_PASSWORD"), "visitors must enter this password (any user name), or name:password pairs separated by commas (env PUBLICLOCAL_PASSWORD)")
+	o.profile = fs.String("profile", "", "take flags from this profile in publiclocal.json (see publiclocal profiles)")
 	o.expires = fs.Duration("expires", 0, "shorter link lifetime, e.g. 30m or 2h")
 	o.maxVisits = fs.Int("max-visits", 0, "only the first N people (networks) can use the link")
 	o.note = fs.String("note", "", "a note shown to visitors on the link's first page, e.g. \"staging build for Anna\"")
@@ -85,6 +89,10 @@ func tunnelFlags(kind string) (*flag.FlagSet, *tunnelOpts) {
 	o.latency = fs.String("latency", "", "slow every request down: 800ms, or a range like 200ms-2s")
 	o.fail = fs.String("fail", "", "answer this share of requests with 503, e.g. 10%")
 	o.feedback = fs.Bool("feedback", false, "add a Feedback button to your pages; comments appear in this terminal")
+	o.headers, o.rewrites, o.blocks = &listFlag{}, &listFlag{}, &listFlag{}
+	fs.Var(o.headers, "header", "add a header to every request, e.g. \"X-Env: staging\" (repeatable)")
+	fs.Var(o.rewrites, "rewrite", "change a path prefix before it reaches your app, e.g. /api=/v2/api (repeatable)")
+	fs.Var(o.blocks, "block", "answer this path with 403, e.g. /admin or /admin/* (repeatable)")
 	o.domain = fs.String("domain", "", "serve the link on your own verified name too, e.g. demo.example.com (see publiclocal domains)")
 	o.live = fs.Bool("live", false, "print a private link where teammates can watch requests arrive live")
 	return fs, o
@@ -115,6 +123,10 @@ func runClient(ctx context.Context, kind string, args []string) error {
 			fmt.Fprintf(fs.Output(), "Usage: publiclocal tcp [flags] <port|host:port>\n")
 		}
 		fs.PrintDefaults()
+	}
+	args, err := applyProfile(args)
+	if err != nil {
+		return err
 	}
 	fs.Parse(args)
 	if fs.NArg() < 1 || (kind == proto.TypeTCP && fs.NArg() != 1) {
@@ -147,7 +159,8 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 		if o.kind == proto.TypeTCP {
 			t.RemotePort = *o.remotePort
 		} else {
-			t.Password, t.Note, t.MaxVisitors, t.MaxAge = *o.password, *o.note, *o.maxVisits, *o.expires
+			t.Note, t.MaxVisitors, t.MaxAge = *o.note, *o.maxVisits, *o.expires
+			t.Password, t.Users = splitPassword(*o.password)
 			t.HostHeader, t.AllowIPs, t.AllowGitHub = *o.hostHeader, splitList(*o.allowIP), splitList(*o.allowGitHub)
 			if o.domain != nil && len(locals) == 1 {
 				t.Domain = *o.domain
@@ -210,6 +223,7 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 			Verify:             extras.Verify,
 			Mocks:              extras.Mocks,
 			Chaos:              extras.Chaos,
+			Rules:              extras.Rules,
 			Feedback:           extras.Feedback,
 			LiveKey:            extras.LiveKey,
 			OnFeedback: func(f client.Feedback) {
@@ -224,7 +238,7 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 			OnRequest: func(c client.Captured) {
 				store.Add(c)
 				if !*o.quiet {
-					fmt.Printf("%s  %-6s %-40s %d  %4d ms  %s%s\n", c.Time.Format("15:04:05"), c.Method, clip(c.Path, 40), c.Status, c.Duration.Milliseconds(), c.Remote, requestTags(c))
+					fmt.Printf("%s  %-6s %-40s %d  %4d ms  %s%s\n", c.Time.Format("15:04:05"), c.Method, clip(c.Path, 40), c.Status, c.Duration.Milliseconds(), visitorName(c), requestTags(c))
 				}
 			},
 			OnReady: func(infos []proto.TunnelInfo) {
@@ -266,7 +280,11 @@ func runTunnel(ctx context.Context, o *tunnelOpts, locals []string) error {
 				}
 				var notes []string
 				if o.kind == proto.TypeHTTP && *o.password != "" {
-					notes = append(notes, "password protected (any user name)")
+					if _, users := splitPassword(*o.password); len(users) > 0 {
+						notes = append(notes, fmt.Sprintf("%d named user(s)", len(users)))
+					} else {
+						notes = append(notes, "password protected (any user name)")
+					}
 				}
 				if o.kind == proto.TypeHTTP && *o.maxVisits > 0 {
 					notes = append(notes, fmt.Sprintf("first %d visitor(s) only", *o.maxVisits))
@@ -373,6 +391,7 @@ type extras struct {
 	Verify   *client.Verifier
 	Mocks    []client.Mock
 	Chaos    client.Chaos
+	Rules    client.Rules
 	Feedback bool
 	LiveKey  string
 	notes    []string
@@ -424,6 +443,33 @@ func linkExtras(o *tunnelOpts) (extras, error) {
 		x.Chaos.FailRate = f
 		x.notes = append(x.notes, fmt.Sprintf("%.0f%% of requests fail on purpose", f*100))
 	}
+	for _, h := range *o.headers {
+		k, v, err := client.ParseHeader(h)
+		if err != nil {
+			return x, err
+		}
+		if x.Rules.Headers == nil {
+			x.Rules.Headers = http.Header{}
+		}
+		x.Rules.Headers.Add(k, v)
+	}
+	for _, r := range *o.rewrites {
+		rw, err := client.ParseRewrite(r)
+		if err != nil {
+			return x, err
+		}
+		x.Rules.Rewrites = append(x.Rules.Rewrites, rw)
+	}
+	for _, b := range *o.blocks {
+		p, err := client.ParseBlock(b)
+		if err != nil {
+			return x, err
+		}
+		x.Rules.Blocks = append(x.Rules.Blocks, p)
+	}
+	if n := len(*o.headers) + len(*o.rewrites) + len(*o.blocks); n > 0 {
+		x.notes = append(x.notes, fmt.Sprintf("%d edge rule(s)", n))
+	}
 	if *o.feedback {
 		x.Feedback = true
 		x.notes = append(x.notes, "Feedback button on pages")
@@ -434,6 +480,29 @@ func linkExtras(o *tunnelOpts) (extras, error) {
 		x.LiveKey = hex.EncodeToString(b)
 	}
 	return x, nil
+}
+
+// splitPassword turns --password into a shared password or user:password pairs.
+func splitPassword(s string) (string, []string) {
+	items := splitList(s)
+	if len(items) == 0 {
+		return s, nil
+	}
+	for _, it := range items {
+		name, pw, ok := strings.Cut(it, ":")
+		if !ok || name == "" || pw == "" || strings.ContainsAny(name, " :") {
+			return s, nil // a plain password, even one with a colon in it
+		}
+	}
+	return "", items
+}
+
+// visitorName is "anna@203.0.113.7" for named visitors, else the address.
+func visitorName(c client.Captured) string {
+	if c.User != "" {
+		return c.User + "@" + c.Remote
+	}
+	return c.Remote
 }
 
 // requestTags adds what the extras did to a request's line in the feed.
